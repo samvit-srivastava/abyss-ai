@@ -23,6 +23,10 @@
   --animate-swim-squid: swim-squid 18s ease-in-out infinite;
   --animate-sway-vent: sway-vent 8s ease-in-out infinite;
   --animate-pulse-bio: pulse-bio 5s ease-in-out infinite;
+  
+  /* Discovery Idle Animations */
+  --animate-float-tilt: float-tilt 12s ease-in-out infinite;
+  --animate-float-drone: float-drone 5s ease-in-out infinite;
 }
 
 :root {
@@ -93,6 +97,17 @@
 @keyframes pulse-bio {
   0%, 100% { opacity: 0.25; filter: drop-shadow(0 0 4px rgba(0, 240, 255, 0.25)); }
   50% { opacity: 0.85; filter: drop-shadow(0 0 12px rgba(0, 240, 255, 0.75)); }
+}
+
+@keyframes float-tilt {
+  0%, 100% { transform: rotate(-2deg) translateY(0); }
+  50% { transform: rotate(2deg) translateY(-8px); }
+}
+
+@keyframes float-drone {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  33% { transform: translateY(-7px) rotate(0.8deg); }
+  66% { transform: translateY(2px) rotate(-0.8deg); }
 }
 
 html {

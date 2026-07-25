@@ -1,11 +1,14 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { motion, useMotionValue, useSpring, useScroll, useTransform, useReducedMotion } from "framer-motion";
+import { motion, useMotionValue, useSpring, useScroll, useTransform, useReducedMotion, AnimatePresence } from "framer-motion";
 import { Compass, ChevronDown } from "lucide-react";
 import SonarCanvas from "./SonarCanvas";
 import DepthHUD from "./DepthHUD";
 import ZoneTransitionOverlay from "./ZoneTransitionOverlay";
+import DiscoveryNode from "./DiscoveryNode";
+import DiscoveryPanel from "./DiscoveryPanel";
+import { DISCOVERIES, Discovery } from "@/data/discoveries";
 
 interface RippleClick {
   id: number;
@@ -20,13 +23,18 @@ export default function Landing() {
   const [ripples, setRipples] = useState<RippleClick[]>([]);
   const [isTouch, setIsTouch] = useState(false);
   const [hasMovedMouse, setHasMovedMouse] = useState(false);
+  
+  // Phase 3 States: Discovery & Modal HUD
+  const [currentDepth, setCurrentDepth] = useState(0);
+  const [hoveredDiscovery, setHoveredDiscovery] = useState<Discovery | null>(null);
+  const [selectedDiscovery, setSelectedDiscovery] = useState<Discovery | null>(null);
 
   const shouldReduceMotion = useReducedMotion();
 
-  // Scroll Progress calculations for continuous dive mapping (0 to 1 progress mapped across 1200vh height)
+  // Scroll Progress calculations for continuous dive mapping
   const { scrollYProgress } = useScroll();
 
-  // --- BACKGROUND GRADIENT LAYER CROSS-FADES (Composited for GPU performance) ---
+  // --- BACKGROUND GRADIENT LAYER CROSS-FADES (GPU accelerated) ---
   const bg1Opacity = useTransform(scrollYProgress, [0, 0.08, 0.16], [1, 1, 0]); // Surface/Sunlight
   const bg2Opacity = useTransform(scrollYProgress, [0.08, 0.16, 0.28, 0.36], [0, 1, 1, 0]); // Twilight
   const bg3Opacity = useTransform(scrollYProgress, [0.28, 0.36, 0.54, 0.64], [0, 1, 1, 0]); // Midnight
@@ -35,7 +43,7 @@ export default function Landing() {
 
   // --- ATMOSPHERIC TELEMETRY SCALING ---
   const cameraScale = useTransform(scrollYProgress, [0, 1], [1, 1.08]);
-  const raysOpacity = useTransform(scrollYProgress, [0, 0.05, 0.12], [1, 0.65, 0]); // Sunlight fades in Twilight
+  const raysOpacity = useTransform(scrollYProgress, [0, 0.05, 0.12], [1, 0.65, 0]); 
   const fogOpacity = useTransform(scrollYProgress, [0, 0.1, 0.4, 0.8, 1], [0.15, 0.35, 0.55, 0.72, 0.85]);
 
   // --- HERO PORTION TRANSITIONS (Slides up and fades away on scroll start) ---
@@ -126,6 +134,27 @@ export default function Landing() {
     };
   }, [btnX, btnY, mouseX, mouseY, hasMovedMouse, isTouch]);
 
+  // Performance Optimization scroll listener: updates currentDepth state only when
+  // depth shifts by > 15m, avoiding hundreds of layout calls and locking 60 FPS.
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      const progress = maxScroll > 0 ? currentScrollY / maxScroll : 0;
+      const depth = Math.round(progress * 11000);
+
+      setCurrentDepth((prev) => {
+        if (Math.abs(prev - depth) > 15) {
+          return depth;
+        }
+        return prev;
+      });
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   // Spawn local click ripple
   const handleButtonClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     const button = buttonRef.current;
@@ -206,6 +235,32 @@ export default function Landing() {
         delay: shouldReduceMotion ? 0 : 2.1,
       },
     },
+  };
+
+  // Cursor scale configuration states
+  const getOuterRingProps = () => {
+    if (hoveredDiscovery) {
+      return {
+        width: 48,
+        height: 48,
+        borderColor: "rgba(0, 240, 255, 0.95)",
+        borderStyle: "solid",
+      };
+    }
+    if (isHoveringCTA) {
+      return {
+        width: 58,
+        height: 58,
+        borderColor: "rgba(0, 240, 255, 0.8)",
+        borderStyle: "dashed",
+      };
+    }
+    return {
+      width: 30,
+      height: 30,
+      borderColor: "rgba(0, 240, 255, 0.35)",
+      borderStyle: "solid",
+    };
   };
 
   return (
@@ -361,7 +416,7 @@ export default function Landing() {
 
         </motion.div>
 
-        {/* Layer 6: Atmospheric Underwater Fog (Denses linearly based on depth) */}
+        {/* Layer 6: Atmospheric Underwater Fog */}
         <motion.div style={{ opacity: fogOpacity }} className="absolute inset-0 underwater-fog z-10" />
 
         {/* ──────────────────────────────────────────────────────────── */}
@@ -506,12 +561,43 @@ export default function Landing() {
       </div>
 
       {/* ──────────────────────────────────────────────────────────────── */}
+      {/* INTERACTIVE ANOMALIES NODES */}
+      <AnimatePresence>
+        {DISCOVERIES.map((d) => {
+          // Anomaly active visibility check (Depth-Aware Visibility system is source of truth)
+          const isWithinRange = currentDepth >= d.minimumDepth && currentDepth <= d.maximumDepth;
+          return (
+            isWithinRange && (
+              <DiscoveryNode
+                key={d.id}
+                discovery={d}
+                onHoverStart={() => setHoveredDiscovery(d)}
+                onHoverEnd={() => setHoveredDiscovery(null)}
+                onClick={() => setSelectedDiscovery(d)}
+              />
+            )
+          );
+        })}
+      </AnimatePresence>
+
+      {/* ──────────────────────────────────────────────────────────────── */}
       {/* TELEMETRY HUD (Sticky dashboard on right margin) */}
       <DepthHUD />
 
       {/* ──────────────────────────────────────────────────────────────── */}
       {/* CINEMATIC ZONE CROSSING OVERLAYS (Rate-limited, non-blocking) */}
       <ZoneTransitionOverlay />
+
+      {/* ──────────────────────────────────────────────────────────────── */}
+      {/* ANOMALY TELEMETRY DETAIL MODAL PANEL */}
+      <AnimatePresence>
+        {selectedDiscovery && (
+          <DiscoveryPanel
+            discovery={selectedDiscovery}
+            onClose={() => setSelectedDiscovery(null)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* ──────────────────────────────────────────────────────────────── */}
       {/* CUSTOM SONAR CURSOR */}
@@ -523,22 +609,22 @@ export default function Landing() {
             translateX: "-50%",
             translateY: "-50%",
           }}
-          className="fixed top-0 left-0 w-8 h-8 pointer-events-none z-50 mix-blend-screen flex items-center justify-center transform-gpu"
+          className="fixed top-0 left-0 pointer-events-none z-50 mix-blend-screen flex items-center justify-center transform-gpu"
         >
+          {/* Inner core dot */}
           <div
             className={`rounded-full transition-all duration-300 ${
-              isHoveringCTA
+              hoveredDiscovery
+                ? "w-1 h-1 bg-sonar-cyan shadow-[0_0_6px_rgba(0,240,255,1)]"
+                : isHoveringCTA
                 ? "w-2.5 h-2.5 bg-white shadow-[0_0_12px_rgba(255,255,255,1)]"
                 : "w-1.5 h-1.5 bg-sonar-cyan shadow-[0_0_8px_rgba(0,240,255,0.8)]"
             }`}
           />
+          
+          {/* Concentric outer ring */}
           <motion.div
-            animate={{
-              width: isHoveringCTA ? 58 : 30,
-              height: isHoveringCTA ? 58 : 30,
-              borderColor: isHoveringCTA ? "rgba(0, 240, 255, 0.8)" : "rgba(0, 240, 255, 0.35)",
-              borderStyle: isHoveringCTA ? "dashed" : "solid",
-            }}
+            animate={getOuterRingProps()}
             transition={{
               type: "spring",
               stiffness: 260,
@@ -546,6 +632,33 @@ export default function Landing() {
             }}
             className="absolute rounded-full border"
           />
+
+          {/* Anomaly Precision Crosshair & Target Tag overlay */}
+          <AnimatePresence>
+            {hoveredDiscovery && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.85 }}
+                transition={{ duration: 0.25 }}
+                className="absolute inset-0 flex items-center justify-center pointer-events-none w-12 h-12"
+              >
+                {/* Targeting hair lines */}
+                <div className="absolute w-[1px] h-1.5 bg-sonar-cyan top-[-6px]" />
+                <div className="absolute w-[1px] h-1.5 bg-sonar-cyan bottom-[-6px]" />
+                <div className="absolute w-1.5 h-[1px] bg-sonar-cyan left-[-6px]" />
+                <div className="absolute w-1.5 h-[1px] bg-sonar-cyan right-[-6px]" />
+
+                {/* Pulsing Sonar target warning */}
+                <span className="absolute inset-[-4px] border border-sonar-cyan/15 rounded-full animate-ping pointer-events-none" />
+
+                {/* Target warning display banner */}
+                <span className="absolute left-8 text-[7px] tracking-[0.2em] text-sonar-cyan bg-[#010910]/85 px-1.5 py-0.5 border border-sonar-cyan/30 uppercase whitespace-nowrap animate-pulse font-mono font-bold shadow-[0_0_10px_rgba(0,240,255,0.15)]">
+                  DISCOVERY SCAN
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
     </div>
