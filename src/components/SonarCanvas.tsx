@@ -14,6 +14,7 @@ interface Plankton {
   wobbleSpeed: number;
   wobbleRange: number;
   wobbleAngle: number;
+  isSnow?: boolean; // Differentiation flag for marine snow flakes
 }
 
 interface Bubble {
@@ -97,7 +98,7 @@ export default function SonarCanvas() {
     window.addEventListener("scroll", handleScroll, { passive: true });
 
     // --- OBJECT POOLING SETUP ---
-    const MAX_PLANKTON = 75;
+    const MAX_PLANKTON = 100; // Increased to density populate space
     const MAX_BUBBLES = 40;
     const MAX_RIPPLES = 40;
 
@@ -105,20 +106,22 @@ export default function SonarCanvas() {
     const bubblePool: Bubble[] = [];
     const ripplePool: SonarRipple[] = [];
 
-    // Initialize Plankton Pool
+    // Initialize Plankton & Marine Snow Pool (Split 60% Plankton / 40% Marine Snow Flakes)
     for (let i = 0; i < MAX_PLANKTON; i++) {
+      const isSnow = i % 2 === 0;
       planktonPool.push({
         x: Math.random() * width,
         y: Math.random() * height,
-        vx: (Math.random() - 0.5) * 0.22,
-        vy: -0.15 - Math.random() * 0.2, 
-        radius: 0.6 + Math.random() * 1.3,
+        vx: (Math.random() - 0.5) * (isSnow ? 0.08 : 0.28),
+        vy: isSnow ? (-0.1 - Math.random() * 0.12) : (-0.15 - Math.random() * 0.25), 
+        radius: isSnow ? (1.5 + Math.random() * 2.5) : (0.5 + Math.random() * 1.1),
         alpha: Math.random(),
-        targetAlpha: 0.15 + Math.random() * 0.55,
-        fadeSpeed: 0.005 + Math.random() * 0.01,
-        wobbleSpeed: 0.01 + Math.random() * 0.02,
-        wobbleRange: 0.2 + Math.random() * 0.8,
+        targetAlpha: isSnow ? (0.1 + Math.random() * 0.32) : (0.18 + Math.random() * 0.62),
+        fadeSpeed: 0.004 + Math.random() * 0.012,
+        wobbleSpeed: isSnow ? (0.005 + Math.random() * 0.01) : (0.015 + Math.random() * 0.025),
+        wobbleRange: isSnow ? (0.5 + Math.random() * 1.2) : (0.2 + Math.random() * 0.8),
         wobbleAngle: Math.random() * Math.PI * 2,
+        isSnow: isSnow,
       });
     }
 
@@ -204,115 +207,132 @@ export default function SonarCanvas() {
       // Decay scroll velocity over frames
       scroll.velocity *= 0.94;
 
-      // Adjust density and speed settings depending on scroll depth progress (0 to 1)
-      // Bubble count decreases as pressure increases, but never drops below a baseline of 4 bubbles
-      const activeBubblesCount = Math.max(4, Math.round(MAX_BUBBLES * (1 - scroll.progress * 0.9)));
+      // Telemetry environmental reactivity:
+      // Bubbles are completely crushed under extreme Hadal pressure (vanish at progress > 0.8)
+      const isExtremePressure = scroll.progress > 0.8;
+      const activeBubblesCount = isExtremePressure 
+        ? 0 
+        : Math.max(2, Math.round(MAX_BUBBLES * (1 - scroll.progress * 1.15)));
       
-      // Plankton horizontal motion slows down at deep depths to represent stillness
+      // Plankton horizontal motion slows down at deep depths to represent stillness,
+      // but vertical currents offset them
       const planktonDriftScale = 1 - scroll.progress * 0.72;
 
-      // 1. UPDATE AND DRAW PLANKTON
+      // 1. UPDATE AND DRAW PLANKTON / MARINE SNOW FLAKES
       for (let i = 0; i < MAX_PLANKTON; i++) {
         const p = planktonPool[i];
 
         // Apply drift scaled by depth (quieter flow down deep)
         p.wobbleAngle += p.wobbleSpeed;
-        const wobbleX = Math.sin(p.wobbleAngle) * p.wobbleRange * 0.15;
+        const wobbleX = Math.sin(p.wobbleAngle) * p.wobbleRange * (p.isSnow ? 0.25 : 0.15);
         p.x += (p.vx + wobbleX) * planktonDriftScale;
         
         // Add scroll displacement: when camera moves down (positive scroll velocity),
         // particles appear to rise faster relative to the submarine
-        const scrollOffset = scroll.velocity * 0.12;
+        const scrollOffset = scroll.velocity * (p.isSnow ? 0.08 : 0.15);
         p.y += p.vy - scrollOffset;
 
         // Mouse avoidance physics
         const dx = p.x - mouse.x;
         const dy = p.y - mouse.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        const repelRadius = 120;
+        const repelRadius = p.isSnow ? 60 : 120; // snow is heavier, repelled less
 
         if (distance < repelRadius) {
           const force = (repelRadius - distance) / repelRadius;
           const angle = Math.atan2(dy, dx);
-          p.x += Math.cos(angle) * force * 1.6;
-          p.y += Math.sin(angle) * force * 1.6;
+          p.x += Math.cos(angle) * force * (p.isSnow ? 0.8 : 1.6);
+          p.y += Math.sin(angle) * force * (p.isSnow ? 0.8 : 1.6);
         }
 
         // Screen boundary wrapping
-        if (p.x < -10) p.x = width + 10;
-        if (p.x > width + 10) p.x = -10;
-        if (p.y < -10) {
-          p.y = height + 10;
+        if (p.x < -20) p.x = width + 20;
+        if (p.x > width + 20) p.x = -20;
+        if (p.y < -20) {
+          p.y = height + 20;
           p.x = Math.random() * width;
         }
-        if (p.y > height + 10) {
-          p.y = -10;
+        if (p.y > height + 20) {
+          p.y = -20;
           p.x = Math.random() * width;
         }
 
         // Breathing opacity
         if (Math.abs(p.alpha - p.targetAlpha) < 0.01) {
-          p.targetAlpha = 0.12 + Math.random() * 0.58;
+          p.targetAlpha = p.isSnow 
+            ? (0.05 + Math.random() * 0.28) 
+            : (0.15 + Math.random() * 0.58);
         }
         p.alpha += (p.targetAlpha - p.alpha) * p.fadeSpeed;
 
-        // Deep sea bioluminescent shift: deeper particles pulse slower and look slightly cyan-greener
-        const pulseRate = 1 + scroll.progress * 0.5;
-        const finalAlpha = Math.max(0.05, p.alpha * (0.4 + 0.6 * Math.sin(Date.now() * 0.001 * pulseRate)));
+        // Draw particle based on type (Snow vs Plankton)
+        const finalAlpha = Math.max(0.02, p.alpha * (0.4 + 0.6 * Math.sin(Date.now() * 0.001 * (1 + scroll.progress * 0.5))));
         
         ctx.beginPath();
-        const radGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 2.2);
-        
-        // Dynamic shift to electric green-cyan at absolute depths
-        const colorString = scroll.progress > 0.65 
-          ? `rgba(0, 255, 200, ${finalAlpha * 0.95})` 
-          : `rgba(0, 240, 255, ${finalAlpha})`;
-          
-        radGrad.addColorStop(0, colorString);
-        radGrad.addColorStop(1, "rgba(0, 240, 255, 0)");
-        ctx.fillStyle = radGrad;
-        ctx.arc(p.x, p.y, p.radius * 2.2, 0, Math.PI * 2);
+        if (p.isSnow) {
+          // Marine Snow: fluffy white/soft cyan organic aggregations
+          const radGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 2.8);
+          const colorString = scroll.progress > 0.6 
+            ? `rgba(0, 245, 235, ${finalAlpha * 0.55})` 
+            : `rgba(225, 245, 255, ${finalAlpha * 0.45})`;
+          radGrad.addColorStop(0, colorString);
+          radGrad.addColorStop(1, "rgba(255, 255, 255, 0)");
+          ctx.fillStyle = radGrad;
+          ctx.arc(p.x, p.y, p.radius * 2.8, 0, Math.PI * 2);
+        } else {
+          // Bioluminescent Plankton: electric cyan/green dots
+          const radGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 2.2);
+          const colorString = scroll.progress > 0.65 
+            ? `rgba(0, 255, 200, ${finalAlpha * 0.95})` 
+            : `rgba(0, 240, 255, ${finalAlpha})`;
+          radGrad.addColorStop(0, colorString);
+          radGrad.addColorStop(1, "rgba(0, 240, 255, 0)");
+          ctx.fillStyle = radGrad;
+          ctx.arc(p.x, p.y, p.radius * 2.2, 0, Math.PI * 2);
+        }
         ctx.fill();
       }
 
       // 2. UPDATE AND DRAW BUBBLES (Limited by active pool size to match depth dynamics)
-      for (let i = 0; i < activeBubblesCount; i++) {
-        const b = bubblePool[i];
+      if (activeBubblesCount > 0) {
+        for (let i = 0; i < activeBubblesCount; i++) {
+          const b = bubblePool[i];
 
-        // Bubble vertical velocity is augmented by the scroll speed of descent
-        const speedMultiplier = 1 + Math.max(0, scroll.velocity * 0.05);
-        const currentVy = b.vy * speedMultiplier - scroll.velocity * 0.25;
+          // Bubble vertical velocity is augmented by the scroll speed of descent
+          const speedMultiplier = 1 + Math.max(0, scroll.velocity * 0.05);
+          const currentVy = b.vy * speedMultiplier - scroll.velocity * 0.25;
 
-        b.wobbleAngle += b.wobbleSpeed;
-        b.x += Math.sin(b.wobbleAngle) * 0.32;
-        b.y += currentVy;
+          b.wobbleAngle += b.wobbleSpeed;
+          b.x += Math.sin(b.wobbleAngle) * 0.32;
+          b.y += currentVy;
 
-        // Wrap around bottom
-        if (b.y < -20) {
-          b.y = height + Math.random() * 150;
-          b.x = Math.random() * width;
-          b.alpha = 0.08 + Math.random() * 0.38;
+          // Wrap around bottom
+          if (b.y < -20) {
+            b.y = height + Math.random() * 150;
+            b.x = Math.random() * width;
+            b.alpha = 0.08 + Math.random() * 0.38;
+          }
+          if (b.y > height + 200) {
+            b.y = -20 - Math.random() * 50;
+            b.x = Math.random() * width;
+          }
+
+          // Deep bubbles appear under pressure (much smaller and fainter, eventually vanishing)
+          const sizeScale = Math.max(0.15, 1 - scroll.progress * 0.85);
+          const currentRadius = b.radius * sizeScale;
+          const bubbleFade = 1 - scroll.progress * 0.95;
+
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(0, 240, 255, ${b.alpha * 0.55 * bubbleFade})`;
+          ctx.lineWidth = 0.65;
+          ctx.arc(b.x, b.y, currentRadius, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.fillStyle = `rgba(255, 255, 255, ${b.alpha * 0.25 * bubbleFade})`;
+          ctx.arc(b.x - currentRadius * 0.3, b.y - currentRadius * 0.3, currentRadius * 0.25, 0, Math.PI * 2);
+          ctx.fill();
         }
-        if (b.y > height + 200) {
-          // If we scroll UP rapidly, wrap bubbles to top
-          b.y = -20 - Math.random() * 50;
-          b.x = Math.random() * width;
-        }
-
-        // Deep bubbles appear under pressure (slightly smaller and fainter)
-        const sizeScale = 1 - scroll.progress * 0.3;
-        const currentRadius = b.radius * sizeScale;
-
-        ctx.beginPath();
-        ctx.strokeStyle = `rgba(0, 240, 255, ${b.alpha * 0.55 * (1 - scroll.progress * 0.4)})`;
-        ctx.lineWidth = 0.65;
-        ctx.arc(b.x, b.y, currentRadius, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.fillStyle = `rgba(255, 255, 255, ${b.alpha * 0.25 * (1 - scroll.progress * 0.5)})`;
-        ctx.arc(b.x - currentRadius * 0.3, b.y - currentRadius * 0.3, currentRadius * 0.25, 0, Math.PI * 2);
-        ctx.fill();
       }
 
       // 3. UPDATE AND DRAW SONAR RIPPLES

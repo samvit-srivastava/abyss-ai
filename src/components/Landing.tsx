@@ -44,16 +44,24 @@ export default function Landing() {
   const bg5Opacity = useTransform(scrollYProgress, [0.82, 0.90], [0, 1]); // Hadal
 
   // --- ATMOSPHERIC TELEMETRY SCALING ---
-  const cameraScale = useTransform(scrollYProgress, [0, 1], [1, 1.08]);
+  const cameraScale = useTransform(scrollYProgress, [0, 1], [1, 1.15]);
+  const cameraX = useTransform(scrollYProgress, [0, 0.2, 0.45, 0.7, 0.9, 1], [0, 18, -12, 22, -15, 0]);
+  const cameraRotate = useTransform(scrollYProgress, [0, 0.3, 0.6, 0.85, 1], [0, 0.6, -0.4, 0.5, 0]);
+  const cameraJitter = useTransform(scrollYProgress, (progress) => {
+    if (progress < 0.54) return 0;
+    const amplitude = progress > 0.82 ? 1.6 : 0.7;
+    return Math.sin(progress * 2500) * amplitude;
+  });
   const raysOpacity = useTransform(scrollYProgress, [0, 0.05, 0.12], [1, 0.65, 0]); 
   const fogOpacity = useTransform(scrollYProgress, [0, 0.1, 0.4, 0.8, 1], [0.15, 0.35, 0.55, 0.72, 0.85]);
 
-  // --- HERO PORTION TRANSITIONS (Slides up and fades away on scroll start) ---
-  const landingY = useTransform(scrollYProgress, [0, 0.06], [0, -150]);
-  const landingOpacity = useTransform(scrollYProgress, [0, 0.05], [1, 0]);
+  // --- HERO PORTION TRANSITIONS (Smooth fade-blur-slide precisely from 150m to 500m depth) ---
+  const landingY = useTransform(scrollYProgress, [0, 0.0136, 0.0454], [0, 0, -180]);
+  const landingOpacity = useTransform(scrollYProgress, [0, 0.0136, 0.0454], [1, 1, 0]);
+  const landingBlur = useTransform(scrollYProgress, [0, 0.0136, 0.0454], ["blur(0px)", "blur(0px)", "blur(18px)"]);
 
-  const headerOpacity = useTransform(scrollYProgress, [0, 0.04], [0.8, 0]);
-  const footerOpacity = useTransform(scrollYProgress, [0, 0.04], [1, 0]);
+  const headerOpacity = useTransform(scrollYProgress, [0, 0.0136, 0.036], [0.8, 0.8, 0]);
+  const footerOpacity = useTransform(scrollYProgress, [0, 0.0136, 0.036], [1, 1, 0]);
 
   // --- SEA CREATURE PARALLAX MATH ---
   const fishY = useTransform(scrollYProgress, [0.05, 0.16], [90, -90]);
@@ -298,8 +306,8 @@ export default function Landing() {
           className="absolute inset-0 w-full h-full bg-black"
         />
 
-        {/* Camera Zoom Container (Applies subtle scale relative to depth progress) */}
-        <motion.div style={{ scale: cameraScale }} className="absolute inset-0 w-full h-full">
+        {/* Camera Zoom Container (Applies subtle scale, drift, tilt, and Hadal pressure vibration) */}
+        <motion.div style={{ scale: cameraScale, x: cameraX, y: cameraJitter, rotate: cameraRotate }} className="absolute inset-0 w-full h-full">
           
           {/* Layer 2: Moving Caustics Overlays */}
           <div className="absolute inset-0 caustics-pattern animate-caustic-1" />
@@ -416,14 +424,45 @@ export default function Landing() {
             </svg>
           </motion.div>
 
+          {/* Hadal: Left & Right Trench Rocky Walls Silhouettes */}
+          <motion.div
+            style={{
+              opacity: useTransform(scrollYProgress, [0.75, 0.88], [0, 0.72]),
+              y: useTransform(scrollYProgress, [0.75, 1], [150, -100]),
+            }}
+            className="absolute top-[82%] left-0 w-64 h-[110vh] text-black pointer-events-none"
+          >
+            <svg viewBox="0 0 100 300" fill="currentColor" className="w-full h-full opacity-65">
+              <path d="M0,0 Q35,50 15,100 T40,200 Q20,250 45,300 L0,300 Z" />
+            </svg>
+          </motion.div>
+          <motion.div
+            style={{
+              opacity: useTransform(scrollYProgress, [0.75, 0.88], [0, 0.72]),
+              y: useTransform(scrollYProgress, [0.75, 1], [180, -120]),
+            }}
+            className="absolute top-[82%] right-0 w-64 h-[110vh] text-black pointer-events-none"
+          >
+            <svg viewBox="0 0 100 300" fill="currentColor" className="w-full h-full opacity-65">
+              <path d="M100,0 Q65,50 85,100 T60,200 Q80,250 55,300 L100,300 Z" />
+            </svg>
+          </motion.div>
+
         </motion.div>
 
         {/* Layer 6: Atmospheric Underwater Fog */}
         <motion.div style={{ opacity: fogOpacity }} className="absolute inset-0 underwater-fog z-10" />
 
         {/* ──────────────────────────────────────────────────────────── */}
-        {/* FIXED POSITION LANDING SCREEN PORTION */}
-        <div className="absolute inset-0 flex flex-col justify-between items-center h-full w-full z-20">
+        {/* FIXED POSITION LANDING SCREEN PORTION (Unmounts past 500m to preserve FPS) */}
+        <AnimatePresence>
+          {currentDepth <= 500 && (
+            <motion.div
+              initial={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={{ filter: landingBlur }}
+              className="absolute inset-0 flex flex-col justify-between items-center h-full w-full z-20"
+            >
           
           {/* Branding Header */}
           <motion.header
@@ -554,11 +593,12 @@ export default function Landing() {
                   <div className="absolute w-[2px] h-4 bg-sonar-cyan animate-pulse shadow-[0_0_8px_rgba(0,240,255,0.7)]" />
                 </div>
                 <ChevronDown className="w-4 h-4 text-sonar-cyan/60 animate-indicator-bounce mt-0.5" />
-              </div>
             </div>
-          </motion.footer>
-
-        </div>
+          </div>
+        </motion.footer>
+      </motion.div>
+    )}
+  </AnimatePresence>
 
       </div>
 
