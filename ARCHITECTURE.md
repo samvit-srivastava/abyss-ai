@@ -1,6 +1,6 @@
-# ⚙️ ABYSS AI — Technical Architecture Documentation
+# ⚙️ POSEIDON AI — Technical Architecture Documentation
 
-This document outlines the architectural design principles, performance optimizations, and subsystem implementations powering **Abyss AI**.
+This document outlines the architectural design principles, performance optimizations, and subsystem implementations powering **POSEIDON AI**.
 
 ---
 

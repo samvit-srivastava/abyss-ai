@@ -15,8 +15,8 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "ABYSS AI",
-  description: "Explore the Unknown. Talk to the Ocean.",
+  title: "POSEIDON AI",
+  description: "Deep Ocean Expedition & Scientific AI Telemetry Platform",
 };
 
 export default function RootLayout({

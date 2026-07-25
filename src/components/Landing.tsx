@@ -418,7 +418,7 @@ export default function Landing() {
               <div className="flex items-center gap-3">
                 <Compass className="w-5 h-5 text-sonar-cyan/80 animate-spin-[spin_16s_linear_infinite]" />
                 <span className="font-display tracking-[0.4em] text-[11px] font-semibold text-white/90 uppercase">
-                  Abyss AI
+                  POSEIDON AI
                 </span>
               </div>
 
@@ -548,7 +548,7 @@ export default function Landing() {
               </div>
 
               <footer className="mt-8 font-mono text-[9px] text-white/30 tracking-widest uppercase">
-                ABYSS AI // POSEIDON EXPEDITION SYSTEMS v2.0
+                POSEIDON AI // EXPEDITION SYSTEMS v2.0
               </footer>
             </div>
           </div>

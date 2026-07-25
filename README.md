@@ -1,6 +1,6 @@
-# 🌊 ABYSS AI — Deep Ocean Expedition & AI Intel Platform
+# 🌊 POSEIDON AI — Deep Ocean Expedition & AI Intel Platform
 
-**Abyss AI** is an interactive, web-based deep-sea exploration platform powered by **Google Gemini AI**. Users descend through the five oceanic zones—from the surface Sunlight Zone down to Challenger Deep at **10,928 meters**—encountering 50+ marine species, historic shipwrecks, hydrothermal vents, and real-time AI telemetry.
+**POSEIDON AI** is an interactive, web-based deep-sea exploration platform powered by **Google Gemini AI**. Users descend through the five oceanic zones—from the surface Sunlight Zone down to Challenger Deep at **10,928 meters**—encountering 50+ marine species, historic shipwrecks, hydrothermal vents, and real-time AI telemetry.
 
 ---
 
