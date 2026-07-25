@@ -193,9 +193,26 @@ export default function SonarCanvas() {
       }
     };
 
+    const handleBubbleBurst = () => {
+      const count = 35;
+      for (let i = 0; i < count; i++) {
+        const idx = i % bubblePool.length;
+        const b = bubblePool[idx];
+        b.x = width * 0.2 + Math.random() * (width * 0.6);
+        b.y = height + Math.random() * 80;
+        b.radius = 1.8 + Math.random() * 4.5;
+        b.vy = -3.0 - Math.random() * 4.0;
+        b.alpha = 0.6 + Math.random() * 0.35;
+      }
+      spawnRipple(width / 2, height * 0.8, "click");
+    };
+
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mousedown", handleMouseDown);
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("abyss-bubble-burst", handleBubbleBurst);
+
+    let lastAutoPing = Date.now();
 
     // --- RENDER LOOP ---
     const render = () => {
@@ -206,6 +223,13 @@ export default function SonarCanvas() {
 
       // Decay scroll velocity over frames
       scroll.velocity *= 0.94;
+
+      // Subtle occasional automated sonar sweeps
+      const now = Date.now();
+      if (now - lastAutoPing > 12000) {
+        spawnRipple(Math.random() * width, Math.random() * height, "move");
+        lastAutoPing = now;
+      }
 
       // Telemetry environmental reactivity:
       // Bubbles are completely crushed under extreme Hadal pressure (vanish at progress > 0.8)
@@ -378,6 +402,7 @@ export default function SonarCanvas() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mousedown", handleMouseDown);
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("abyss-bubble-burst", handleBubbleBurst);
       cancelAnimationFrame(animationFrameId);
     };
   }, []);

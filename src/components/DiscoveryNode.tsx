@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Anchor, Compass, Cpu } from "lucide-react";
 import { Discovery } from "@/data/discoveries";
+import { playClickSound, playRadarPulse } from "@/utils/audio";
 
 interface DiscoveryNodeProps {
   discovery: Discovery;
@@ -158,13 +159,17 @@ export default function DiscoveryNode({ discovery, onHoverStart, onHoverEnd, onC
       <motion.div
         onHoverStart={() => {
           setIsHovered(true);
+          playRadarPulse();
           onHoverStart();
         }}
         onHoverEnd={() => {
           setIsHovered(false);
           onHoverEnd();
         }}
-        onClick={onClick}
+        onClick={() => {
+          playClickSound();
+          onClick();
+        }}
         whileHover={{
           y: -10,
           scale: 1.06,

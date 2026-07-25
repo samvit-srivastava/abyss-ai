@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { motion, useMotionValue, useSpring, useScroll, useTransform, useReducedMotion, AnimatePresence } from "framer-motion";
-import { Compass, ChevronDown } from "lucide-react";
+import { Compass, ChevronDown, Volume2, VolumeX, Terminal, ShieldAlert } from "lucide-react";
 import SonarCanvas from "./SonarCanvas";
 import DepthHUD from "./DepthHUD";
 import ZoneTransitionOverlay from "./ZoneTransitionOverlay";
@@ -10,6 +10,22 @@ import DiscoveryNode from "./DiscoveryNode";
 import DiscoveryPanel from "./DiscoveryPanel";
 import PoseidonConsole from "./PoseidonConsole";
 import { DISCOVERIES, Discovery } from "@/data/discoveries";
+import { 
+  playClickSound, 
+  playConsoleBeep, 
+  playSonarPing, 
+  startAmbientHum, 
+  toggleMute, 
+  isMuted 
+} from "@/utils/audio";
+
+const INTRO_LINES = [
+  "ABYSS AI // MULTISPHERE EXPLORATION MAIN GRID",
+  "ESTABLISHING SECURE PROTOCOLS... ✓",
+  "SONAR RADIAL TRANSMITTERS... ONLINE ✓",
+  "TELEMETRY DEPENSORS... ONLINE ✓",
+  "POSEIDON COGNITIVE ARRAY MODULE... ONLINE ✓",
+];
 
 interface RippleClick {
   id: number;
@@ -20,16 +36,30 @@ interface RippleClick {
 export default function Landing() {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   
-  const [isHoveringCTA, setIsHoveringCTA] = useState(false);
-  const [ripples, setRipples] = useState<RippleClick[]>([]);
-  const [isTouch, setIsTouch] = useState(false);
-  const [hasMovedMouse, setHasMovedMouse] = useState(false);
-  
+  // Phase 5 States: Cinematic Intro, Audio & Autopilot Driving
+  const [showIntro, setShowIntro] = useState(true);
+  const [introTextIndex, setIntroTextIndex] = useState(0);
+  const [bootLines, setBootLines] = useState<string[]>([]);
+  const [muted, setMuted] = useState(false);
+  const [isStartingExpedition, setIsStartingExpedition] = useState(false);
+
+  // Hackathon Autopilot Demo State
+  const [demoActive, setDemoActive] = useState(false);
+  const [demoBanner, setDemoBanner] = useState<string | null>(null);
+  const demoIntervalRef = useRef<number | null>(null);
+  const demoTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
+
   // Phase 3 & 4 States: Discovery & POSEIDON HUD
   const [currentDepth, setCurrentDepth] = useState(0);
   const [hoveredDiscovery, setHoveredDiscovery] = useState<Discovery | null>(null);
   const [selectedDiscovery, setSelectedDiscovery] = useState<Discovery | null>(null);
   const [activePoseidonDiscovery, setActivePoseidonDiscovery] = useState<Discovery | null>(null);
+
+  // Cursor & Touch Detection States
+  const [isTouch, setIsTouch] = useState(false);
+  const [hasMovedMouse, setHasMovedMouse] = useState(false);
+  const [isHoveringCTA, setIsHoveringCTA] = useState(false);
+  const [ripples, setRipples] = useState<RippleClick[]>([]);
 
   const shouldReduceMotion = useReducedMotion();
 
@@ -92,19 +122,221 @@ export default function Landing() {
 
   // Detect mobile/touch devices
   useEffect(() => {
-    const checkTouch = () => {
-      setIsTouch("ontouchstart" in window || navigator.maxTouchPoints > 0);
-    };
-    checkTouch();
+    const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+    setTimeout(() => setIsTouch(isTouchDevice), 0);
 
-    if (!isTouch) {
+    if (!isTouchDevice) {
       document.body.classList.add("hide-cursor");
     }
 
     return () => {
       document.body.classList.remove("hide-cursor");
     };
-  }, [isTouch]);
+  }, []);
+
+  // Cleanup autopilot resources on unmount
+  useEffect(() => {
+    return () => {
+      if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
+      demoTimeoutsRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
+
+  // Synchronize storage seen intro status & audio volume levels
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const seen = sessionStorage.getItem("abyss-intro-seen");
+      if (seen === "true") {
+        setTimeout(() => setShowIntro(false), 0);
+      }
+      setTimeout(() => setMuted(isMuted()), 0);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showIntro) return;
+    if (introTextIndex < INTRO_LINES.length) {
+      const delay = introTextIndex === 0 ? 100 : introTextIndex === 1 ? 550 : 350;
+      const timer = setTimeout(() => {
+        setBootLines((prev) => [...prev, INTRO_LINES[introTextIndex]]);
+        setIntroTextIndex((prev) => prev + 1);
+        playConsoleBeep();
+      }, delay);
+      return () => clearTimeout(timer);
+    }
+  }, [introTextIndex, showIntro]);
+
+  const handleBeginExpedition = () => {
+    playClickSound();
+    playSonarPing();
+    startAmbientHum();
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("abyss-intro-seen", "true");
+    }
+    setShowIntro(false);
+  };
+
+  // Periodic ambient sonar sweeps
+  useEffect(() => {
+    if (showIntro || muted) return;
+    const interval = setInterval(() => {
+      if (window.scrollY > 150) {
+        playSonarPing();
+      }
+    }, 14000);
+    return () => clearInterval(interval);
+  }, [showIntro, muted]);
+
+  // Autopilot autopilot drivers
+  const stopDemo = () => {
+    setDemoActive(false);
+    setDemoBanner(null);
+    if (demoIntervalRef.current) {
+      clearInterval(demoIntervalRef.current);
+      demoIntervalRef.current = null;
+    }
+    demoTimeoutsRef.current.forEach((t) => clearTimeout(t));
+    demoTimeoutsRef.current = [];
+    setHoveredDiscovery(null);
+    setSelectedDiscovery(null);
+    setActivePoseidonDiscovery(null);
+    playClickSound();
+  };
+
+  const startDemo = () => {
+    stopDemo(); // resets previous states
+    setDemoActive(true);
+    playConsoleBeep();
+
+    // Reset modals
+    setSelectedDiscovery(null);
+    setActivePoseidonDiscovery(null);
+    window.scrollTo({ top: 0, behavior: "instant" });
+
+    const timeouts: NodeJS.Timeout[] = [];
+    setDemoBanner("HACKATHON DEMO: AUTOMATING SUBMARINE CONTROLS...");
+
+    // T5: Start scrolling descent
+    const t1 = setTimeout(() => {
+      setDemoBanner("DESCENDING WATER COLUMN (SUNLIGHT → TWILIGHT)...");
+      
+      const duration = 15000;
+      const startTime = Date.now();
+      const startScroll = window.scrollY;
+      const maxScroll = (document.documentElement.scrollHeight || (12 * window.innerHeight)) - window.innerHeight;
+      const targetScroll = (3780 / 11000) * maxScroll; // Target Titanic at 3780m
+
+      demoIntervalRef.current = window.setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const p = Math.min(elapsed / duration, 1);
+        const ease = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+        window.scrollTo(0, startScroll + (targetScroll - startScroll) * ease);
+
+        if (p >= 1) {
+          if (demoIntervalRef.current) {
+            clearInterval(demoIntervalRef.current);
+            demoIntervalRef.current = null;
+          }
+        }
+      }, 16);
+    }, 5000);
+    timeouts.push(t1);
+
+    // T20: Mid-dive zone transition banner
+    const t2 = setTimeout(() => {
+      setDemoBanner("CROSSING MESOPELAGIC BOUNDARY. telemetry ONLINE.");
+    }, 20000);
+    timeouts.push(t2);
+
+    // T35: Target acquisition
+    const t3 = setTimeout(() => {
+      setDemoBanner("ANOMALY RADAR SIGNATURE LOCATED. SCANNING HULL...");
+      const titanic = DISCOVERIES.find((d) => d.id === "titanic");
+      if (titanic) {
+        setHoveredDiscovery(titanic);
+        playSonarPing();
+      }
+    }, 35000);
+    timeouts.push(t3);
+
+    // T45: Open details panel
+    const t4 = setTimeout(() => {
+      setDemoBanner("SPECIMEN MATRIX CORRELATION STABILIZED.");
+      const titanic = DISCOVERIES.find((d) => d.id === "titanic");
+      if (titanic) {
+        setHoveredDiscovery(null);
+        setSelectedDiscovery(titanic);
+        playClickSound();
+      }
+    }, 45000);
+    timeouts.push(t4);
+
+    // T55: Launch POSEIDON
+    const t5 = setTimeout(() => {
+      setDemoBanner("SYNCHRONIZING WITH POSEIDON COMPANION FRAME...");
+      const titanic = DISCOVERIES.find((d) => d.id === "titanic");
+      if (titanic) {
+        setSelectedDiscovery(null);
+        setActivePoseidonDiscovery(titanic);
+      }
+    }, 55000);
+    timeouts.push(t5);
+
+    // T60: Send Predefined Question
+    const t6 = setTimeout(() => {
+      setDemoBanner("QUERY SUBMITTED: 'What makes this organism survive here?'");
+      window.dispatchEvent(
+        new CustomEvent("abyss-poseidon-demo-question", {
+          detail: { question: "What makes this organism survive here?" }
+        })
+      );
+    }, 60000);
+    timeouts.push(t6);
+
+    // T75: Relinquish control
+    const t7 = setTimeout(() => {
+      setDemoBanner("AUTO-PILOT EXPLORATION COMPLETED. SYSTEM CONTROL RETURNED.");
+      const finishTimer = setTimeout(() => {
+        setDemoActive(false);
+        setDemoBanner(null);
+      }, 3000);
+      timeouts.push(finishTimer);
+    }, 75000);
+    timeouts.push(t7);
+
+    demoTimeoutsRef.current = timeouts;
+  };
+
+  const handleDemoToggle = () => {
+    if (demoActive) {
+      stopDemo();
+    } else {
+      startDemo();
+    }
+  };
+
+  // Autopilot manual overrides
+  useEffect(() => {
+    if (!demoActive) return;
+
+    const handleUserInterrupt = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (target?.closest(".demo-toggle-btn") || target?.closest(".poseidon-console-container")) return;
+      stopDemo();
+    };
+
+    window.addEventListener("wheel", handleUserInterrupt, { passive: true });
+    window.addEventListener("touchmove", handleUserInterrupt, { passive: true });
+    window.addEventListener("mousedown", handleUserInterrupt);
+    window.addEventListener("keydown", handleUserInterrupt);
+
+    return () => {
+      window.removeEventListener("wheel", handleUserInterrupt);
+      window.removeEventListener("touchmove", handleUserInterrupt);
+      window.removeEventListener("mousedown", handleUserInterrupt);
+      window.removeEventListener("keydown", handleUserInterrupt);
+    };
+  }, [demoActive]);
 
   // Track global mouse coordinates & compute magnetic proximity for the CTA
   useEffect(() => {
@@ -165,8 +397,10 @@ export default function Landing() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Spawn local click ripple
+  // Spawn local click ripple and run camera-shake bubble burst expedition descent triggers
   const handleButtonClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (isStartingExpedition) return;
+
     const button = buttonRef.current;
     if (!button) return;
 
@@ -185,6 +419,39 @@ export default function Landing() {
     setTimeout(() => {
       setRipples((prev) => prev.filter((r) => r.id !== newRipple.id));
     }, 850);
+
+    // Click trigger: Sound effects & dim & vibrate
+    playClickSound();
+    setTimeout(() => {
+      playSonarPing();
+    }, 120);
+
+    setIsStartingExpedition(true);
+    window.dispatchEvent(new Event("abyss-bubble-burst"));
+
+    // Scroll descent drive trigger
+    setTimeout(() => {
+      const start = window.scrollY;
+      const target = window.innerHeight * 0.45;
+      const startTime = Date.now();
+      const duration = 2400;
+
+      const scrollStep = () => {
+        const elapsed = Date.now() - startTime;
+        const p = Math.min(elapsed / duration, 1);
+        const ease = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+        
+        window.scrollTo(0, start + (target - start) * ease);
+
+        if (p < 1) {
+          requestAnimationFrame(scrollStep);
+        } else {
+          setIsStartingExpedition(false);
+        }
+      };
+
+      requestAnimationFrame(scrollStep);
+    }, 900);
   };
 
   // Typography staggered texts
@@ -306,8 +573,21 @@ export default function Landing() {
           className="absolute inset-0 w-full h-full bg-black"
         />
 
-        {/* Camera Zoom Container (Applies subtle scale, drift, tilt, and Hadal pressure vibration) */}
-        <motion.div style={{ scale: cameraScale, x: cameraX, y: cameraJitter, rotate: cameraRotate }} className="absolute inset-0 w-full h-full">
+        {/* Camera Floating Container (Slow continuous floating sway) */}
+        <motion.div
+          animate={{
+            x: [0, 8, -6, 10, -5, 0],
+            y: [0, -5, 8, -4, 6, 0],
+          }}
+          transition={{
+            duration: 25,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+          className="absolute inset-0 w-full h-full"
+        >
+          {/* Camera Zoom Container (Applies subtle scale, drift, tilt, and Hadal pressure vibration) */}
+          <motion.div style={{ scale: cameraScale, x: cameraX, y: cameraJitter, rotate: cameraRotate }} className={`absolute inset-0 w-full h-full ${isStartingExpedition ? "camera-shake-active" : ""}`}>
           
           {/* Layer 2: Moving Caustics Overlays */}
           <div className="absolute inset-0 caustics-pattern animate-caustic-1" />
@@ -399,6 +679,20 @@ export default function Landing() {
             </svg>
           </motion.div>
 
+          {/* Distant Whale Silhouette (Slow horizontal drift across Midnight/Abyss boundaries) */}
+          <motion.div 
+            style={{ 
+              y: useTransform(scrollYProgress, [0.22, 0.58], [350, -350]),
+              x: useTransform(scrollYProgress, [0.22, 0.58], [-350, 1500]),
+              opacity: useTransform(scrollYProgress, [0.22, 0.28, 0.52, 0.58], [0, 0.15, 0.15, 0])
+            }} 
+            className="absolute top-[32%] pointer-events-none text-black select-none z-[1]"
+          >
+            <svg viewBox="0 0 200 80" className="w-[360px] h-[140px] opacity-55">
+              <path fill="currentColor" d="M10,35 C25,25 50,15 100,18 C155,22 178,14 185,25 C190,16 195,8 200,18 C195,25 185,32 175,36 C148,45 118,48 88,44 C58,40 25,38 10,35 Z" />
+            </svg>
+          </motion.div>
+
           {/* Abyss: Hydrothermal Vents */}
           <motion.div 
             style={{ y: ventsY }} 
@@ -449,6 +743,9 @@ export default function Landing() {
           </motion.div>
 
         </motion.div>
+        
+        {/* Close of camera slow floating sway parent */}
+        </motion.div>
 
         {/* Layer 6: Atmospheric Underwater Fog */}
         <motion.div style={{ opacity: fogOpacity }} className="absolute inset-0 underwater-fog z-10" />
@@ -467,16 +764,41 @@ export default function Landing() {
           {/* Branding Header */}
           <motion.header
             style={{ opacity: headerOpacity }}
-            className="w-full max-w-7xl mx-auto px-8 py-6 flex items-center justify-between pointer-events-none"
+            className="w-full max-w-7xl mx-auto px-8 py-6 flex items-center justify-between pointer-events-auto relative z-30"
           >
-            <div className="flex items-center gap-2.5 opacity-80">
+            <div className="flex items-center gap-2.5 opacity-80 select-none">
               <Compass className="w-6 h-6 text-sonar-cyan animate-spin-[spin_12s_linear_infinite]" />
               <span className="font-display tracking-[0.3em] text-xs font-semibold text-white">
                 ABYSS AI
               </span>
             </div>
-            <div className="text-[10px] tracking-[0.2em] font-mono text-sonar-cyan/40">
-              SYS_STATUS: READY
+            
+            <div className="flex items-center gap-4 text-[10px] tracking-[0.2em] font-mono pointer-events-auto select-none">
+              {/* Hackathon Autopilot Demo Button */}
+              <button
+                onClick={handleDemoToggle}
+                className="demo-toggle-btn px-3 py-1.5 border border-yellow-500/30 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 font-semibold tracking-wider transition-colors cursor-none flex items-center gap-1.5 uppercase shadow-[0_0_10px_rgba(234,179,8,0.1)] focus:outline-none"
+              >
+                <Terminal className="w-3.5 h-3.5 animate-pulse text-yellow-500" />
+                {demoActive ? "STOP DEMO" : "HACKATHON DEMO"}
+              </button>
+
+              {/* Programmatic Mute Toggle */}
+              <button
+                onClick={() => {
+                  playClickSound();
+                  const newMute = toggleMute();
+                  setMuted(newMute);
+                }}
+                className="p-2 border border-white/10 hover:border-sonar-cyan/50 text-white/60 hover:text-sonar-cyan bg-black/40 transition-colors cursor-none focus:outline-none"
+                aria-label={muted ? "Unmute audio" : "Mute audio"}
+              >
+                {muted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4" />}
+              </button>
+              
+              <span className="text-sonar-cyan/40 hidden md:inline">
+                SYS_STATUS: READY
+              </span>
             </div>
           </motion.header>
 
@@ -716,6 +1038,92 @@ export default function Landing() {
           </AnimatePresence>
         </motion.div>
       )}
+
+      {/* Cinematic Screen Dimming Overlay */}
+      <AnimatePresence>
+        {isStartingExpedition && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.94 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.8 }}
+            className="fixed inset-0 bg-[#000408]/95 z-30 pointer-events-none"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Autopilot Demo Status Alert Overlay */}
+      <AnimatePresence>
+        {demoBanner && (
+          <motion.div
+            initial={{ y: -60, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -60, opacity: 0 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 border border-yellow-500/40 bg-[#010910]/95 px-5 py-3 shadow-[0_0_30px_rgba(234,179,8,0.25)] font-mono text-[9px] md:text-[10px] text-yellow-400 tracking-[0.2em] uppercase select-none rounded-none"
+          >
+            <ShieldAlert className="w-4 h-4 text-yellow-500 animate-pulse shrink-0" />
+            <span className="leading-none">{demoBanner}</span>
+            <button
+              onClick={stopDemo}
+              className="ml-3 px-2 py-1 border border-yellow-500/35 hover:bg-yellow-500/20 text-yellow-400 font-bold tracking-widest text-[8px] cursor-none"
+            >
+              ABORT
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Fullscreen Entrance Diagnostic Cinematic (Unmounts permanently once dismissed) */}
+      <AnimatePresence>
+        {showIntro && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0, filter: "blur(20px)" }}
+            transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed inset-0 bg-[#000204] z-[1000] flex flex-col items-center justify-center font-mono pointer-events-auto cursor-none"
+          >
+            {/* Holographic background vignette */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_30%,rgba(0,0,0,0.85)_100%)] pointer-events-none" />
+            <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.015)_0.5px,transparent_0.5px)] bg-[size:100%_4px] opacity-40 pointer-events-none" />
+            
+            <div className="max-w-md w-full px-6 flex flex-col items-start gap-4 z-10 select-none">
+              <div className="flex items-center gap-3 text-sonar-cyan text-xs font-semibold tracking-[0.3em] uppercase">
+                <Compass className="w-5 h-5 animate-spin-[spin_10s_linear_infinite] shrink-0" />
+                <span>EXPEDITION PROTOCOLS</span>
+              </div>
+              
+              <div className="w-full h-[1px] bg-sonar-cyan/15 my-1" />
+
+              {/* Typewriter boot output console */}
+              <div className="flex flex-col gap-2 min-h-36 font-mono text-[9px] md:text-[10px] text-white/50 tracking-wider">
+                {bootLines.map((line, idx) => (
+                  <div key={idx} className={idx === 0 ? "text-sonar-cyan font-bold tracking-widest text-xs" : ""}>
+                    &gt; {line}
+                  </div>
+                ))}
+                {introTextIndex < INTRO_LINES.length && (
+                  <div className="text-sonar-cyan animate-pulse">&gt; _</div>
+                )}
+              </div>
+
+              {/* Finalized diagnostic CTA */}
+              <AnimatePresence>
+                {introTextIndex >= INTRO_LINES.length && (
+                  <motion.button
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ type: "spring", stiffness: 100, damping: 12 }}
+                    onClick={handleBeginExpedition}
+                    className="w-full mt-4 py-3.5 bg-sonar-cyan/10 hover:bg-sonar-cyan/20 border border-sonar-cyan/35 hover:border-sonar-cyan/80 text-sonar-cyan hover:text-white rounded-none tracking-[0.25em] text-xs font-semibold shadow-[0_0_15px_rgba(0,240,255,0.12)] hover:shadow-[0_0_25px_rgba(0,240,255,0.35)] transition-all duration-300 cursor-none focus:outline-none"
+                  >
+                    ESTABLISH LINK & BEGIN
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Compass, Cpu, Send, AlertTriangle, User, Loader2 } from "lucide-react";
 import { Discovery } from "@/data/discoveries";
+import { playClickSound, playConsoleBeep, playSonarPing } from "@/utils/audio";
 
 interface Message {
   role: "user" | "model" | "system";
@@ -85,6 +86,7 @@ export default function PoseidonConsole({ discovery, depth, onClose }: PoseidonC
       const delay = bootTextIndex === 0 ? 100 : bootTextIndex === 1 ? 300 : 250;
       const timer = setTimeout(() => {
         setBootLines((prev) => [...prev, BOOT_STEPS[bootTextIndex]]);
+        playConsoleBeep();
         setBootTextIndex((prev) => prev + 1);
       }, delay);
       return () => clearTimeout(timer);
@@ -92,6 +94,7 @@ export default function PoseidonConsole({ discovery, depth, onClose }: PoseidonC
       // Boot completed: initialize chat panel
       const timer = setTimeout(() => {
         setBooting(false);
+        playSonarPing();
         // Seed first POSEIDON greeting
         const now = new Date();
         const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -177,10 +180,10 @@ export default function PoseidonConsole({ discovery, depth, onClose }: PoseidonC
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
-  // --- SUBMIT COMPANION CONVERSATION ROUTE ---
-  const handleSendMessage = async (text: string) => {
+  const handleSendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isThinking) return;
 
+    playClickSound();
     const userMessageText = text.trim();
     setInputValue("");
     setErrorStatus(null);
@@ -223,6 +226,7 @@ export default function PoseidonConsole({ discovery, depth, onClose }: PoseidonC
       // 3. Append POSEIDON Response
       const respNow = new Date();
       const respTimeStr = `${String(respNow.getHours()).padStart(2, "0")}:${String(respNow.getMinutes()).padStart(2, "0")}`;
+      playSonarPing();
       setMessages((prev) => [
         ...prev,
         { role: "model" as const, content: data.text, timestamp: respTimeStr }
@@ -233,7 +237,34 @@ export default function PoseidonConsole({ discovery, depth, onClose }: PoseidonC
     } finally {
       setIsThinking(false);
     }
-  };
+  }, [messages, isThinking, depth, zoneName, pressure, temp, discovery]);
+
+  // --- AUTOPILOT TYPING EFFECT FOR HACKATHON DEMO MODE ---
+  useEffect(() => {
+    const handleDemoQuestion = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const question = customEvent.detail.question;
+      
+      let currentLength = 0;
+      const typeInterval = setInterval(() => {
+        currentLength++;
+        setInputValue(question.substring(0, currentLength));
+        playConsoleBeep();
+        
+        if (currentLength >= question.length) {
+          clearInterval(typeInterval);
+          setTimeout(() => {
+            handleSendMessage(question);
+          }, 800);
+        }
+      }, 65);
+    };
+
+    window.addEventListener("abyss-poseidon-demo-question", handleDemoQuestion);
+    return () => {
+      window.removeEventListener("abyss-poseidon-demo-question", handleDemoQuestion);
+    };
+  }, [messages, isThinking, handleSendMessage]);
 
   // Trigger suggestions dynamically based on symbol type
   const getDynamicSuggestions = (symbol: string) => {

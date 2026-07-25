@@ -12,6 +12,14 @@ interface DiscoveryPanelProps {
 }
 
 export default function DiscoveryPanel({ discovery, onClose, onTalkToPoseidon }: DiscoveryPanelProps) {
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   // Piecewise telemetry calculation helpers based on depth
   const depth = discovery.targetDepth;
   const pressure = Math.round(1 + depth / 10);
