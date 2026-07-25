@@ -8,9 +8,10 @@ import { Discovery } from "@/data/discoveries";
 interface DiscoveryPanelProps {
   discovery: Discovery;
   onClose: () => void;
+  onTalkToPoseidon: () => void;
 }
 
-export default function DiscoveryPanel({ discovery, onClose }: DiscoveryPanelProps) {
+export default function DiscoveryPanel({ discovery, onClose, onTalkToPoseidon }: DiscoveryPanelProps) {
   // Piecewise telemetry calculation helpers based on depth
   const depth = discovery.targetDepth;
   const pressure = Math.round(1 + depth / 10);
@@ -269,27 +270,29 @@ export default function DiscoveryPanel({ discovery, onClose }: DiscoveryPanelPro
           {discovery.description}
         </p>
 
-        {/* ──────────────────────────────────────────────────────────── */}
-        {/* DISABLED POSEIDON BUTTON */}
+        {/* ACTIVE TALK TO POSEIDON BUTTON */}
         <button
-          disabled
-          className="w-full mt-6 py-4 border border-white/10 bg-white/5 text-white/50 cursor-not-allowed relative group overflow-hidden select-none font-display tracking-[0.2em] text-xs font-semibold transform-gpu focus:outline-none"
+          onClick={() => {
+            onTalkToPoseidon();
+            onClose(); // close panel when starting companion
+          }}
+          className="w-full mt-6 py-4 border border-sonar-cyan/30 bg-sonar-cyan/10 hover:bg-sonar-cyan/20 text-sonar-cyan hover:text-white cursor-none relative group overflow-hidden select-none font-display tracking-[0.2em] text-xs font-semibold transform-gpu focus:outline-none"
         >
           {/* Border focus flash */}
-          <div className="absolute inset-0 border border-sonar-cyan/0 group-hover:border-sonar-cyan/35 transition-all duration-300 pointer-events-none" />
+          <div className="absolute inset-0 border border-sonar-cyan/0 group-hover:border-sonar-cyan/50 transition-all duration-300 pointer-events-none" />
           
           {/* Reflective light sweep shine */}
-          <div className="absolute inset-y-0 left-[-100%] w-1/2 bg-gradient-to-r from-transparent via-white/5 to-transparent skew-x-[-25deg] group-hover:left-[150%] transition-all duration-800 ease-in-out pointer-events-none" />
+          <div className="absolute inset-y-0 left-[-100%] w-1/2 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-25deg] group-hover:left-[150%] transition-all duration-800 ease-in-out pointer-events-none" />
 
           <div className="flex flex-col items-center gap-0.5 relative z-10">
             <div className="flex items-center gap-1.5 justify-center">
-              <Cpu className="w-3.5 h-3.5 text-white/30 group-hover:text-sonar-cyan/70 transition-colors duration-300" />
-              <span className="text-[11px] font-bold tracking-[0.25em] text-white/40 group-hover:text-sonar-cyan/80 transition-colors duration-300">
-                POSEIDON AI
+              <Cpu className="w-3.5 h-3.5 text-sonar-cyan group-hover:text-white transition-colors duration-300" />
+              <span className="text-[11px] font-bold tracking-[0.25em] text-sonar-cyan group-hover:text-white transition-colors duration-300">
+                TALK TO POSEIDON
               </span>
             </div>
-            <span className="text-[7.5px] font-mono text-white/20 tracking-widest uppercase">
-              Available in Phase 4
+            <span className="text-[7.5px] font-mono text-sonar-cyan/50 group-hover:text-white/60 tracking-widest uppercase transition-colors duration-300">
+              ESTABLISH COMPANION LINK
             </span>
           </div>
         </button>

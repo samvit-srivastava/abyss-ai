@@ -8,6 +8,7 @@ import DepthHUD from "./DepthHUD";
 import ZoneTransitionOverlay from "./ZoneTransitionOverlay";
 import DiscoveryNode from "./DiscoveryNode";
 import DiscoveryPanel from "./DiscoveryPanel";
+import PoseidonConsole from "./PoseidonConsole";
 import { DISCOVERIES, Discovery } from "@/data/discoveries";
 
 interface RippleClick {
@@ -24,10 +25,11 @@ export default function Landing() {
   const [isTouch, setIsTouch] = useState(false);
   const [hasMovedMouse, setHasMovedMouse] = useState(false);
   
-  // Phase 3 States: Discovery & Modal HUD
+  // Phase 3 & 4 States: Discovery & POSEIDON HUD
   const [currentDepth, setCurrentDepth] = useState(0);
   const [hoveredDiscovery, setHoveredDiscovery] = useState<Discovery | null>(null);
   const [selectedDiscovery, setSelectedDiscovery] = useState<Discovery | null>(null);
+  const [activePoseidonDiscovery, setActivePoseidonDiscovery] = useState<Discovery | null>(null);
 
   const shouldReduceMotion = useReducedMotion();
 
@@ -595,6 +597,19 @@ export default function Landing() {
           <DiscoveryPanel
             discovery={selectedDiscovery}
             onClose={() => setSelectedDiscovery(null)}
+            onTalkToPoseidon={() => setActivePoseidonDiscovery(selectedDiscovery)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ──────────────────────────────────────────────────────────────── */}
+      {/* POSEIDON COMPANION CONSOLE */}
+      <AnimatePresence>
+        {activePoseidonDiscovery && (
+          <PoseidonConsole
+            discovery={activePoseidonDiscovery}
+            depth={currentDepth}
+            onClose={() => setActivePoseidonDiscovery(null)}
           />
         )}
       </AnimatePresence>
