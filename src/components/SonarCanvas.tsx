@@ -41,11 +41,17 @@ interface SonarRipple {
 export default function SonarCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
-  // Track mouse coordinates and click events
+  // Track mouse coordinates, click events, and scroll telemetry
   const mouseRef = useRef({
     x: -1000,
     y: -1000,
     lastActive: 0,
+  });
+
+  const scrollRef = useRef({
+    progress: 0,
+    velocity: 0,
+    lastScrollY: 0,
   });
 
   useEffect(() => {
@@ -77,9 +83,22 @@ export default function SonarCanvas() {
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
 
+    // Track scroll positioning & calculate scroll velocity (for descent camera illusion)
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      
+      const scroll = scrollRef.current;
+      scroll.progress = maxScroll > 0 ? currentScrollY / maxScroll : 0;
+      scroll.velocity = currentScrollY - scroll.lastScrollY;
+      scroll.lastScrollY = currentScrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
     // --- OBJECT POOLING SETUP ---
-    const MAX_PLANKTON = 70;
-    const MAX_BUBBLES = 35;
+    const MAX_PLANKTON = 75;
+    const MAX_BUBBLES = 40;
     const MAX_RIPPLES = 40;
 
     const planktonPool: Plankton[] = [];
@@ -91,9 +110,9 @@ export default function SonarCanvas() {
       planktonPool.push({
         x: Math.random() * width,
         y: Math.random() * height,
-        vx: (Math.random() - 0.5) * 0.25,
-        vy: -0.15 - Math.random() * 0.2, // Drifts upwards and sideways
-        radius: 0.6 + Math.random() * 1.4,
+        vx: (Math.random() - 0.5) * 0.22,
+        vy: -0.15 - Math.random() * 0.2, 
+        radius: 0.6 + Math.random() * 1.3,
         alpha: Math.random(),
         targetAlpha: 0.15 + Math.random() * 0.55,
         fadeSpeed: 0.005 + Math.random() * 0.01,
@@ -103,17 +122,17 @@ export default function SonarCanvas() {
       });
     }
 
-    // Initialize Bubble Pool (All starting at various vertical offsets to stream continuously)
+    // Initialize Bubble Pool
     for (let i = 0; i < MAX_BUBBLES; i++) {
       bubblePool.push({
         x: Math.random() * width,
-        y: height + Math.random() * 200, // Spawn below viewport
-        radius: 0.8 + Math.random() * 3.2,
-        vy: -0.6 - Math.random() * 1.4, // Speed proportional to size roughly
+        y: Math.random() * height + height, 
+        radius: 0.8 + Math.random() * 3.0,
+        vy: -0.6 - Math.random() * 1.2, 
         wobbleSpeed: 0.02 + Math.random() * 0.03,
-        wobbleRange: 0.5 + Math.random() * 1.5,
+        wobbleRange: 0.5 + Math.random() * 1.2,
         wobbleAngle: Math.random() * Math.PI * 2,
-        alpha: 0.1 + Math.random() * 0.4,
+        alpha: 0.1 + Math.random() * 0.38,
       });
     }
 
@@ -133,21 +152,19 @@ export default function SonarCanvas() {
 
     // Trigger Sonar Ripple helper
     const spawnRipple = (x: number, y: number, type: "move" | "click") => {
-      // Find first inactive ripple in pool
       const ripple = ripplePool.find((r) => !r.active);
-      if (!ripple) return; // Pool full, drop request for performance
+      if (!ripple) return;
 
       ripple.x = x;
       ripple.y = y;
       ripple.radius = type === "click" ? 5 : 2;
-      ripple.maxRadius = type === "click" ? 180 : 70;
-      ripple.growthRate = type === "click" ? 2.8 : 1.2;
-      ripple.alpha = type === "click" ? 0.75 : 0.35;
+      ripple.maxRadius = type === "click" ? 185 : 75;
+      ripple.growthRate = type === "click" ? 3.0 : 1.3;
+      ripple.alpha = type === "click" ? 0.8 : 0.38;
       ripple.type = type;
       ripple.active = true;
     };
 
-    // Track mouse move to update cursor coordinates & spawn minor move ripples
     let lastMoveTime = 0;
     const handleMouseMove = (e: MouseEvent) => {
       mouseRef.current.x = e.clientX;
@@ -155,22 +172,18 @@ export default function SonarCanvas() {
       mouseRef.current.lastActive = Date.now();
 
       const now = Date.now();
-      // Rate limit move ripples to prevent canvas clogging (every 180ms)
       if (now - lastMoveTime > 180) {
         spawnRipple(e.clientX, e.clientY, "move");
         lastMoveTime = now;
       }
     };
 
-    // Handle mouse click to spawn intense sonar ripples
     const handleMouseDown = (e: MouseEvent) => {
       spawnRipple(e.clientX, e.clientY, "click");
     };
 
-    // Keyboard accessibility trigger for sonar (Space/Enter key when focused anywhere sends sonar)
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === " " || e.key === "Enter") {
-        // Spawn ping from center of viewport or mouse if active
         const x = mouseRef.current.x > 0 ? mouseRef.current.x : width / 2;
         const y = mouseRef.current.y > 0 ? mouseRef.current.y : height / 2;
         spawnRipple(x, y, "click");
@@ -186,29 +199,43 @@ export default function SonarCanvas() {
       ctx.clearRect(0, 0, width, height);
 
       const mouse = mouseRef.current;
+      const scroll = scrollRef.current;
+
+      // Decay scroll velocity over frames
+      scroll.velocity *= 0.94;
+
+      // Adjust density and speed settings depending on scroll depth progress (0 to 1)
+      // Bubble count decreases as pressure increases, but never drops below a baseline of 4 bubbles
+      const activeBubblesCount = Math.max(4, Math.round(MAX_BUBBLES * (1 - scroll.progress * 0.9)));
+      
+      // Plankton horizontal motion slows down at deep depths to represent stillness
+      const planktonDriftScale = 1 - scroll.progress * 0.72;
 
       // 1. UPDATE AND DRAW PLANKTON
       for (let i = 0; i < MAX_PLANKTON; i++) {
         const p = planktonPool[i];
 
-        // Basic drift movement
+        // Apply drift scaled by depth (quieter flow down deep)
         p.wobbleAngle += p.wobbleSpeed;
         const wobbleX = Math.sin(p.wobbleAngle) * p.wobbleRange * 0.15;
-        p.x += p.vx + wobbleX;
-        p.y += p.vy;
+        p.x += (p.vx + wobbleX) * planktonDriftScale;
+        
+        // Add scroll displacement: when camera moves down (positive scroll velocity),
+        // particles appear to rise faster relative to the submarine
+        const scrollOffset = scroll.velocity * 0.12;
+        p.y += p.vy - scrollOffset;
 
         // Mouse avoidance physics
         const dx = p.x - mouse.x;
         const dy = p.y - mouse.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        const repelRadius = 130;
+        const repelRadius = 120;
 
         if (distance < repelRadius) {
           const force = (repelRadius - distance) / repelRadius;
           const angle = Math.atan2(dy, dx);
-          // Push away from mouse
-          p.x += Math.cos(angle) * force * 1.5;
-          p.y += Math.sin(angle) * force * 1.5;
+          p.x += Math.cos(angle) * force * 1.6;
+          p.y += Math.sin(angle) * force * 1.6;
         }
 
         // Screen boundary wrapping
@@ -218,50 +245,73 @@ export default function SonarCanvas() {
           p.y = height + 10;
           p.x = Math.random() * width;
         }
+        if (p.y > height + 10) {
+          p.y = -10;
+          p.x = Math.random() * width;
+        }
 
-        // Breathing opacity effect
+        // Breathing opacity
         if (Math.abs(p.alpha - p.targetAlpha) < 0.01) {
-          p.targetAlpha = 0.15 + Math.random() * 0.55;
+          p.targetAlpha = 0.12 + Math.random() * 0.58;
         }
         p.alpha += (p.targetAlpha - p.alpha) * p.fadeSpeed;
 
-        // Draw soft glowing point
+        // Deep sea bioluminescent shift: deeper particles pulse slower and look slightly cyan-greener
+        const pulseRate = 1 + scroll.progress * 0.5;
+        const finalAlpha = Math.max(0.05, p.alpha * (0.4 + 0.6 * Math.sin(Date.now() * 0.001 * pulseRate)));
+        
         ctx.beginPath();
-        const radGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 2);
-        radGrad.addColorStop(0, `rgba(0, 240, 255, ${p.alpha})`);
+        const radGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 2.2);
+        
+        // Dynamic shift to electric green-cyan at absolute depths
+        const colorString = scroll.progress > 0.65 
+          ? `rgba(0, 255, 200, ${finalAlpha * 0.95})` 
+          : `rgba(0, 240, 255, ${finalAlpha})`;
+          
+        radGrad.addColorStop(0, colorString);
         radGrad.addColorStop(1, "rgba(0, 240, 255, 0)");
         ctx.fillStyle = radGrad;
-        ctx.arc(p.x, p.y, p.radius * 2, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, p.radius * 2.2, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // 2. UPDATE AND DRAW BUBBLES
-      for (let i = 0; i < MAX_BUBBLES; i++) {
+      // 2. UPDATE AND DRAW BUBBLES (Limited by active pool size to match depth dynamics)
+      for (let i = 0; i < activeBubblesCount; i++) {
         const b = bubblePool[i];
 
-        // Rise up and sway
-        b.wobbleAngle += b.wobbleSpeed;
-        b.x += Math.sin(b.wobbleAngle) * 0.35;
-        b.y += b.vy;
+        // Bubble vertical velocity is augmented by the scroll speed of descent
+        const speedMultiplier = 1 + Math.max(0, scroll.velocity * 0.05);
+        const currentVy = b.vy * speedMultiplier - scroll.velocity * 0.25;
 
-        // Wrap around bottom when bubble rises past top
+        b.wobbleAngle += b.wobbleSpeed;
+        b.x += Math.sin(b.wobbleAngle) * 0.32;
+        b.y += currentVy;
+
+        // Wrap around bottom
         if (b.y < -20) {
           b.y = height + Math.random() * 150;
           b.x = Math.random() * width;
           b.alpha = 0.08 + Math.random() * 0.38;
         }
+        if (b.y > height + 200) {
+          // If we scroll UP rapidly, wrap bubbles to top
+          b.y = -20 - Math.random() * 50;
+          b.x = Math.random() * width;
+        }
 
-        // Draw bubble outline
+        // Deep bubbles appear under pressure (slightly smaller and fainter)
+        const sizeScale = 1 - scroll.progress * 0.3;
+        const currentRadius = b.radius * sizeScale;
+
         ctx.beginPath();
-        ctx.strokeStyle = `rgba(0, 240, 255, ${b.alpha * 0.6})`;
-        ctx.lineWidth = 0.7;
-        ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(0, 240, 255, ${b.alpha * 0.55 * (1 - scroll.progress * 0.4)})`;
+        ctx.lineWidth = 0.65;
+        ctx.arc(b.x, b.y, currentRadius, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Subtle highlight reflection inside the bubble
         ctx.beginPath();
-        ctx.fillStyle = `rgba(255, 255, 255, ${b.alpha * 0.3})`;
-        ctx.arc(b.x - b.radius * 0.3, b.y - b.radius * 0.3, b.radius * 0.25, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${b.alpha * 0.25 * (1 - scroll.progress * 0.5)})`;
+        ctx.arc(b.x - currentRadius * 0.3, b.y - currentRadius * 0.3, currentRadius * 0.25, 0, Math.PI * 2);
         ctx.fill();
       }
 
@@ -271,8 +321,6 @@ export default function SonarCanvas() {
         if (!r.active) continue;
 
         r.radius += r.growthRate;
-        
-        // Decay alpha as it expands
         const progress = r.radius / r.maxRadius;
         r.alpha = (r.type === "click" ? 0.75 : 0.35) * (1 - progress);
 
@@ -281,7 +329,6 @@ export default function SonarCanvas() {
           continue;
         }
 
-        // Draw thin concentric rings
         ctx.beginPath();
         ctx.strokeStyle = r.type === "click" 
           ? `rgba(0, 240, 255, ${r.alpha})` 
@@ -290,7 +337,6 @@ export default function SonarCanvas() {
         ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
         ctx.stroke();
 
-        // For click ripples, draw an secondary inner ring lagging slightly behind
         if (r.type === "click" && r.radius > 30) {
           ctx.beginPath();
           ctx.strokeStyle = `rgba(0, 240, 255, ${r.alpha * 0.4})`;
@@ -305,9 +351,10 @@ export default function SonarCanvas() {
 
     render();
 
-    // CLEANUP TO PREVENT MEMORY LEAKS
+    // CLEANUP
     return () => {
       window.removeEventListener("resize", resizeCanvas);
+      window.removeEventListener("scroll", handleScroll);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mousedown", handleMouseDown);
       window.removeEventListener("keydown", handleKeyDown);
