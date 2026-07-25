@@ -1,162 +1,75 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-
-interface Zone {
-  id: string;
-  name: string;
-  min: number;
-  max: number;
-  desc: string;
-  tagline: string;
-}
-
-const ZONES: Zone[] = [
-  {
-    id: "surface",
-    name: "Surface",
-    min: 0,
-    max: 0,
-    desc: "SYS_CALIBRATION: COMPLETE",
-    tagline: "Atmospheric pressure equalized. Expedition launch confirmed."
-  },
-  {
-    id: "sunlight",
-    name: "Sunlight Zone",
-    min: 1,
-    max: 200,
-    desc: "EPIPELAGIC ZONE // 0m - 200m",
-    tagline: "Warm waters, sunlit depths. The final boundary of solar warmth."
-  },
-  {
-    id: "twilight",
-    name: "Twilight Zone",
-    min: 201,
-    max: 1000,
-    desc: "MESOPELAGIC ZONE // 200m - 1000m",
-    tagline: "Light fades rapidly. Pressure mounts. The shadow world begins."
-  },
-  {
-    id: "midnight",
-    name: "Midnight Zone",
-    min: 1001,
-    max: 4000,
-    desc: "BATHYPELAGIC ZONE // 1000m - 4000m",
-    tagline: "Perpetual darkness. Only bioluminescence remains."
-  },
-  {
-    id: "abyssal",
-    name: "Abyssal Zone",
-    min: 4001,
-    max: 6000,
-    desc: "ABYSSOPELAGIC ZONE // 4000m - 6000m",
-    tagline: "Near-freezing temperatures. Tremendous hydrostatic pressure."
-  },
-  {
-    id: "hadal",
-    name: "Hadal Zone",
-    min: 6001,
-    max: 11000,
-    desc: "HADOPELAGIC ZONE // 6000m - 11000m",
-    tagline: "The absolute deep. Silent trenches. The boundary of the unexplored."
-  }
-];
-
-const getZone = (depth: number): Zone => {
-  if (depth === 0) return ZONES[0];
-  if (depth <= 200) return ZONES[1];
-  if (depth <= 1000) return ZONES[2];
-  if (depth <= 4000) return ZONES[3];
-  if (depth <= 6000) return ZONES[4];
-  return ZONES[5];
-};
+import { getZoneFromDepth, calculateDepthFromProgress, OCEAN_ZONES, OceanZoneName } from "@/lib/oceanUtils";
 
 export default function ZoneTransitionOverlay() {
-  const [activeOverlayZone, setActiveOverlayZone] = useState<Zone | null>(null);
-  
-  const currentZoneIdRef = useRef<string>("surface");
-  const isFirstMountRef = useRef<boolean>(true);
-  const triggerTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastTriggerTimeRef = useRef<number>(0);
+  const [activeZone, setActiveZone] = useState<OceanZoneName>("Surface");
+  const [announcementZone, setAnnouncementZone] = useState<{
+    name: OceanZoneName;
+    range: string;
+    description: string;
+  } | null>(null);
 
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
       const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
       const progress = maxScroll > 0 ? currentScrollY / maxScroll : 0;
-      const depth = Math.round(progress * 11000);
-      const currentZone = getZone(depth);
 
-      // Initialize on first mount without popping overlay
-      if (isFirstMountRef.current) {
-        currentZoneIdRef.current = currentZone.id;
-        isFirstMountRef.current = false;
-        return;
-      }
+      const depth = calculateDepthFromProgress(progress);
+      const newZone = getZoneFromDepth(depth);
 
-      // Check if we crossed a zone boundary
-      if (currentZone.id !== currentZoneIdRef.current) {
-        const now = Date.now();
-        // Rate-limit transitions (min 4.5 seconds between new overlays to prevent border scroll-spamming)
-        if (now - lastTriggerTimeRef.current > 4500) {
-          currentZoneIdRef.current = currentZone.id;
-          lastTriggerTimeRef.current = now;
-          
-          // Clear any pending fade-out timeout
-          if (triggerTimeoutRef.current) {
-            clearTimeout(triggerTimeoutRef.current);
-          }
+      if (newZone !== activeZone) {
+        setActiveZone(newZone);
+        
+        const zoneInfo = OCEAN_ZONES.find((z) => z.name === newZone);
+        if (zoneInfo) {
+          setAnnouncementZone({
+            name: zoneInfo.name,
+            range: zoneInfo.depthRange,
+            description: zoneInfo.description,
+          });
 
-          // Trigger overlay display
-          setActiveOverlayZone(currentZone);
+          const timer = setTimeout(() => {
+            setAnnouncementZone(null);
+          }, 3500);
 
-          // Auto fade-out after 1.8 seconds (Overlay duration: 1.5 - 2.0 seconds)
-          triggerTimeoutRef.current = setTimeout(() => {
-            setActiveOverlayZone(null);
-          }, 1800);
+          return () => clearTimeout(timer);
         }
       }
     };
 
     window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-      if (triggerTimeoutRef.current) clearTimeout(triggerTimeoutRef.current);
-    };
-  }, []);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [activeZone]);
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col items-center justify-center pointer-events-none select-none">
-      <AnimatePresence>
-        {activeOverlayZone && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.02 }}
-            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }} // smooth cinematic easing
-            className="flex flex-col items-center justify-center p-8 bg-black/20 backdrop-blur-[3px] border border-white/5 rounded-none max-w-xl text-center pointer-events-none"
-          >
-            {/* Telemetry descriptor code */}
-            <span className="text-[9px] font-mono tracking-[0.25em] text-sonar-cyan opacity-80 uppercase font-semibold">
-              {activeOverlayZone.desc}
-            </span>
+    <AnimatePresence>
+      {announcementZone && (
+        <motion.div
+          initial={{ y: -60, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -60, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 140, damping: 18 }}
+          className="fixed top-0 left-0 right-0 z-40 pointer-events-none flex flex-col items-center select-none"
+        >
+          {/* Subtle Glowing Scanline Divider Line */}
+          <div className="w-full h-[2px] bg-gradient-to-r from-transparent via-sonar-cyan to-transparent shadow-[0_0_15px_rgba(0,240,255,0.9)] animate-pulse" />
 
-            {/* Glowing Main Zone Name */}
-            <h2 className="font-display font-medium text-3xl md:text-4xl text-white tracking-[0.18em] uppercase mt-2 drop-shadow-[0_0_15px_rgba(0,240,255,0.35)]">
-              {activeOverlayZone.name}
-            </h2>
-
-            {/* Shimmer separator bar */}
-            <div className="w-40 h-[1px] bg-gradient-to-r from-transparent via-sonar-cyan/40 to-transparent my-4" />
-
-            {/* Cinematic tagline description */}
-            <p className="font-sans text-[11px] font-light text-slate-300/90 tracking-widest leading-relaxed uppercase max-w-sm">
-              {activeOverlayZone.tagline}
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+          {/* Top Banner Tag */}
+          <div className="mt-3 px-6 py-2 bg-black/90 border border-sonar-cyan/40 backdrop-blur-xl text-center flex items-center gap-3 shadow-[0_0_30px_rgba(0,240,255,0.25)]">
+            <span className="w-2 h-2 rounded-full bg-sonar-cyan animate-ping" />
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <span className="text-white/50 text-[10px] tracking-widest uppercase">ZONE_BOUNDARY:</span>
+              <span className="text-sonar-cyan font-bold tracking-wider uppercase">{announcementZone.name}</span>
+              <span className="text-white/30">•</span>
+              <span className="text-white/80 font-semibold">{announcementZone.range}</span>
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
