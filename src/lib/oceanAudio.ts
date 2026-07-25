@@ -77,6 +77,32 @@ class OceanAudioEngine {
   public getIsPlaying(): boolean {
     return this.isPlaying;
   }
+
+  public playSonarPing() {
+    if (typeof window === "undefined") return;
+    try {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const pingCtx = new AudioCtx();
+      const osc = pingCtx.createOscillator();
+      const gain = pingCtx.createGain();
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, pingCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, pingCtx.currentTime + 0.4);
+
+      gain.gain.setValueAtTime(0.3, pingCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, pingCtx.currentTime + 0.6);
+
+      osc.connect(gain);
+      gain.connect(pingCtx.destination);
+
+      osc.start();
+      osc.stop(pingCtx.currentTime + 0.6);
+      setTimeout(() => pingCtx.close(), 700);
+    } catch {
+      // Audio fallback
+    }
+  }
 }
 
 export const oceanAudio = new OceanAudioEngine();

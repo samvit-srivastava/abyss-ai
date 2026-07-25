@@ -74,7 +74,7 @@ export default function DiscoveryNode({ discovery, onHoverStart, onHoverEnd, onC
       transition={{ duration: 0.4, ease: "easeOut" }}
       style={{
         left: `${discovery.xPercent}%`,
-        top: `50%`,
+        top: `${discovery.yPercent}%`,
       }}
       className="fixed z-30 -translate-x-1/2 -translate-y-1/2 transform-gpu"
       onMouseEnter={() => {

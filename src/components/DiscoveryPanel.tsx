@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { X, Send, Sparkles, AlertCircle, Bot, User, ShieldCheck } from "lucide-react";
 import { Discovery } from "@/data/discoveries";
 import { oceanObjects } from "@/data/ocean";
+import { OCEAN_CREATURES_50 } from "@/data/oceanCreatures";
 import { calculatePressureFromDepth, calculateTemperatureFromDepth } from "@/lib/oceanUtils";
 
 interface DiscoveryPanelProps {
@@ -28,6 +29,12 @@ export default function DiscoveryPanel({ discovery, onClose }: DiscoveryPanelPro
   const backendObject = oceanObjects.find(
     (o) => o.id === discovery.id || o.name.toLowerCase().includes(discovery.name.toLowerCase())
   );
+
+  const creatureMatch = OCEAN_CREATURES_50.find(
+    (c) => c.id === discovery.id || c.name.toLowerCase().includes(discovery.name.toLowerCase())
+  );
+
+  const imageFilename = creatureMatch?.imageFilename || `${discovery.id}.jpg`;
 
   const pressure = calculatePressureFromDepth(discovery.targetDepth);
   const temperature = calculateTemperatureFromDepth(discovery.targetDepth);
@@ -83,7 +90,7 @@ export default function DiscoveryPanel({ discovery, onClose }: DiscoveryPanelPro
   };
 
   const sampleQuestions = backendObject?.sampleQuestions || [
-    `How does the ${discovery.name} adapt to extreme pressure?`,
+    `How does ${discovery.name} adapt to extreme pressure?`,
     `What role does this play in the deep-sea ecosystem?`,
     `Could a human submersible safely explore near here?`,
   ];
@@ -102,30 +109,42 @@ export default function DiscoveryPanel({ discovery, onClose }: DiscoveryPanelPro
       transition={{ type: "spring", stiffness: 240, damping: 28 }}
       className="fixed top-0 right-0 z-50 h-full w-full max-w-lg bg-[#010912]/95 backdrop-blur-2xl border-l border-white/10 text-white flex flex-col shadow-[-20px_0_50px_rgba(0,0,0,0.9)]"
     >
-      {/* Panel Header */}
-      <div className="p-6 border-b border-white/10 flex items-center justify-between bg-black/50">
-        <div className="flex flex-col">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-sonar-cyan animate-pulse" />
-            <span className="text-[8.5px] tracking-[0.3em] font-mono text-sonar-cyan uppercase font-semibold">
-              TELEMETRY INTEL // [{discovery.rarity}]
-            </span>
-          </div>
-          <h2 className="text-xl md:text-2xl font-display font-medium text-white tracking-tight">
-            {discovery.name}
-          </h2>
-          <span className="text-xs font-mono text-white/40 italic">
-            {discovery.scientificName}
-          </span>
-        </div>
-
+      {/* Hero Specimen Image Header */}
+      <div className="relative w-full h-48 md:h-56 bg-black overflow-hidden border-b border-white/10 shrink-0">
+        <img
+          src={`/images/${imageFilename}`}
+          alt={discovery.name}
+          className="w-full h-full object-cover opacity-85"
+          onError={(e) => {
+            (e.target as HTMLElement).style.display = "none";
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#010912] via-[#010912]/40 to-transparent" />
+        
+        {/* Close Button */}
         <button
           onClick={onClose}
-          className="p-2 text-white/40 hover:text-white hover:bg-white/10 border border-transparent hover:border-white/20 transition-all focus:outline-none cursor-none"
+          className="absolute top-4 right-4 p-2 text-white/70 hover:text-white bg-black/60 hover:bg-black/80 border border-white/20 transition-all focus:outline-none"
           aria-label="Close discovery panel"
         >
           <X className="w-5 h-5" />
         </button>
+
+        {/* Specimen Header Title Overlay */}
+        <div className="absolute bottom-4 left-6 right-6 flex flex-col">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-sonar-cyan animate-ping" />
+            <span className="text-[8.5px] tracking-[0.3em] font-mono text-sonar-cyan uppercase font-semibold">
+              TELEMETRY INTEL // [{discovery.rarity}]
+            </span>
+          </div>
+          <h2 className="text-xl md:text-2xl font-display font-medium text-white tracking-tight drop-shadow-md">
+            {discovery.name}
+          </h2>
+          <span className="text-xs font-mono text-white/50 italic">
+            {discovery.scientificName}
+          </span>
+        </div>
       </div>
 
       {/* Main Panel Content */}
@@ -185,7 +204,7 @@ export default function DiscoveryPanel({ discovery, onClose }: DiscoveryPanelPro
                 key={idx}
                 onClick={() => handleSend(q)}
                 disabled={isLoading}
-                className="text-left text-xs font-sans bg-white/[0.03] hover:bg-sonar-cyan/10 border border-white/10 hover:border-sonar-cyan/50 text-white/80 hover:text-sonar-cyan p-3 transition-all cursor-none disabled:opacity-50"
+                className="text-left text-xs font-sans bg-white/[0.03] hover:bg-sonar-cyan/10 border border-white/10 hover:border-sonar-cyan/50 text-white/80 hover:text-sonar-cyan p-3 transition-all disabled:opacity-50"
               >
                 &quot;{q}&quot;
               </button>
@@ -278,7 +297,7 @@ export default function DiscoveryPanel({ discovery, onClose }: DiscoveryPanelPro
         <button
           type="submit"
           disabled={isLoading || !inputQuestion.trim()}
-          className="px-4 py-2.5 bg-sonar-cyan text-black font-mono font-semibold text-xs flex items-center gap-2 hover:bg-sonar-cyan/80 transition-colors disabled:opacity-40 cursor-none"
+          className="px-4 py-2.5 bg-sonar-cyan text-black font-mono font-semibold text-xs flex items-center gap-2 hover:bg-sonar-cyan/80 transition-colors disabled:opacity-40"
         >
           <span>SEND</span>
           <Send className="w-3.5 h-3.5" />

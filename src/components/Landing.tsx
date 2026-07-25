@@ -1,14 +1,13 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { AnimatePresence } from "framer-motion";
-import { Compass, ChevronDown, Volume2, VolumeX } from "lucide-react";
-import Image from "next/image";
+import { Compass, ChevronDown, Volume2, VolumeX, ArrowUp, Sparkles } from "lucide-react";
 import SonarCanvas from "./SonarCanvas";
 import DepthHUD from "./DepthHUD";
 import ZoneTransitionOverlay from "./ZoneTransitionOverlay";
-import DiscoveryNode from "./DiscoveryNode";
 import DiscoveryPanel from "./DiscoveryPanel";
+import DiveLaunchOverlay from "./DiveLaunchOverlay";
 import { DISCOVERIES, Discovery } from "@/data/discoveries";
 import { calculateDepthFromProgress, calculateTemperatureFromDepth } from "@/lib/oceanUtils";
 import { oceanAudio } from "@/lib/oceanAudio";
@@ -20,46 +19,106 @@ interface RippleClick {
   y: number;
 }
 
+interface DepthMilestone {
+  id: string;
+  depth: number;
+  label: string;
+  subtitle: string;
+}
+
+const HISTORIC_MILESTONES: DepthMilestone[] = [
+  { id: "scuba_record", depth: 332, label: "332m // DEEPEST HUMAN SCUBA DIVE RECORD", subtitle: "Ahmed Gabr (2014) · 34 ATM Pressure" },
+  { id: "burj_khalifa", depth: 828, label: "828m // BURJ KHALIFA HEIGHT BENCHMARK", subtitle: "World's Tallest Skyscraper Height Equivalent" },
+  { id: "titanic", depth: 3780, label: "3,780m // R.M.S. TITANIC WRECK SITE", subtitle: "Resting Depth in North Atlantic Ocean" },
+  { id: "uss_johnston", depth: 6460, label: "6,460m // USS JOHNSTON DEEPEST SHIPWRECK", subtitle: "WWII Destroyer Wreckage (Samar Trench)" },
+  { id: "trieste_lander", depth: 10700, label: "10,700m // BATHYSCAPHE TRIESTE RECORD", subtitle: "Piccard & Walsh Historic First Dive (1960)" },
+  { id: "challenger_deep", depth: 10928, label: "10,928m // CHALLENGER DEEP FLOOR", subtitle: "Lowest Point on Earth (Mariana Trench)" },
+];
+
 export default function Landing() {
-  const buttonRef = React.useRef<HTMLButtonElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const cursorRef = useRef<HTMLDivElement | null>(null);
+  const cursorDotRef = useRef<HTMLDivElement | null>(null);
+  const spotlightRef = useRef<HTMLDivElement | null>(null);
 
   const [isHoveringCTA, setIsHoveringCTA] = useState(false);
   const [ripples, setRipples] = useState<RippleClick[]>([]);
   const [isTouch, setIsTouch] = useState(false);
-  const [hasMovedMouse, setHasMovedMouse] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
 
   const [scrollProgress, setScrollProgress] = useState(0);
   const [currentDepth, setCurrentDepth] = useState(0);
-  const [hoveredDiscovery, setHoveredDiscovery] = useState<Discovery | null>(null);
+  const [hoveredEntity, setHoveredEntity] = useState<string | null>(null);
   const [selectedDiscovery, setSelectedDiscovery] = useState<Discovery | null>(null);
-  const [mousePos, setMousePos] = useState({ x: -100, y: -100 });
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+  const [isLaunchingDive, setIsLaunchingDive] = useState(false);
 
   useEffect(() => {
     setIsTouch("ontouchstart" in window || navigator.maxTouchPoints > 0);
   }, []);
 
   useEffect(() => {
-    if (!isTouch) document.body.classList.add("hide-cursor");
-    return () => { document.body.classList.remove("hide-cursor"); };
+    if (!isTouch) {
+      document.documentElement.classList.add("hide-cursor");
+      document.body.classList.add("hide-cursor");
+    }
+    return () => {
+      document.documentElement.classList.remove("hide-cursor");
+      document.body.classList.remove("hide-cursor");
+    };
   }, [isTouch]);
 
+  // Zero-lag 120FPS mouse tracking via direct DOM mutations (no React re-renders)
   useEffect(() => {
-    const onMove = (e: MouseEvent) => { setMousePos({ x: e.clientX, y: e.clientY }); if (!hasMovedMouse) setHasMovedMouse(true); };
-    window.addEventListener("mousemove", onMove);
-    return () => window.removeEventListener("mousemove", onMove);
-  }, [hasMovedMouse]);
+    if (isTouch) return;
 
+    let rafId: number | null = null;
+    let mouseX = -100;
+    let mouseY = -100;
+
+    const updateCursorDOM = () => {
+      if (cursorRef.current) {
+        cursorRef.current.style.transform = `translate3d(${mouseX}px, ${mouseY}px, 0)`;
+        cursorRef.current.style.opacity = "1";
+      }
+      if (spotlightRef.current) {
+        spotlightRef.current.style.background = `radial-gradient(circle 380px at ${mouseX}px ${mouseY}px, rgba(0, 240, 255, 0.14) 0%, rgba(0, 240, 255, 0.04) 50%, transparent 100%)`;
+      }
+      rafId = null;
+    };
+
+    const onMove = (e: MouseEvent) => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+      if (!rafId) {
+        rafId = window.requestAnimationFrame(updateCursorDOM);
+      }
+    };
+
+    window.addEventListener("mousemove", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      if (rafId) window.cancelAnimationFrame(rafId);
+    };
+  }, [isTouch]);
+
+  // Handle scroll state safely with requestAnimationFrame
   useEffect(() => {
+    let ticking = false;
     const onScroll = () => {
-      const y = window.scrollY;
-      const max = document.documentElement.scrollHeight - window.innerHeight;
-      const p = max > 0 ? Math.max(0, Math.min(1, y / max)) : 0;
-      setScrollProgress(p);
-      const depth = calculateDepthFromProgress(p);
-      setCurrentDepth(depth);
-      oceanAudio.setDepth(depth);
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const y = window.scrollY;
+          const max = document.documentElement.scrollHeight - window.innerHeight;
+          const p = max > 0 ? Math.max(0, Math.min(1, y / max)) : 0;
+          setScrollProgress(p);
+          const depth = calculateDepthFromProgress(p);
+          setCurrentDepth(depth);
+          oceanAudio.setDepth(depth);
+          ticking = false;
+        });
+        ticking = true;
+      }
     };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -71,8 +130,18 @@ export default function Landing() {
     if (!btn) return;
     const r = btn.getBoundingClientRect();
     setRipples(prev => [...prev, { id: Date.now(), x: e.clientX - r.left, y: e.clientY - r.top }]);
-    setTimeout(() => setRipples(prev => prev.filter(rip => rip.id !== Date.now())), 850);
-    window.scrollTo({ top: window.innerHeight * 0.85, behavior: "smooth" });
+    oceanAudio.playSonarPing();
+    setIsLaunchingDive(true);
+  };
+
+  const handleDiveComplete = () => {
+    setIsLaunchingDive(false);
+    // Smoothly scroll to ~50m depth where Creature 1 (Ocellaris Clownfish) emerges
+    window.scrollTo({ top: window.innerHeight * 0.18, behavior: "smooth" });
+  };
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const toggleAudio = () => {
@@ -80,8 +149,50 @@ export default function Landing() {
     setIsAudioPlaying(playing);
   };
 
-  const heroOpacity = Math.max(0, 1 - scrollProgress * 28);
+  const openCreaturePanel = (c: OceanCreature) => {
+    const mapped: Discovery = {
+      id: c.id,
+      name: c.name,
+      scientificName: c.scientificName,
+      minimumDepth: c.depthMin,
+      maximumDepth: c.depthMax,
+      targetDepth: Math.round((c.depthMin + c.depthMax) / 2),
+      rarity: c.depthMin > 6000 ? "Legendary" : c.depthMin > 1000 ? "Epic" : c.depthMin > 200 ? "Rare" : "Common",
+      description: `Specimen ${c.name} (${c.scientificName}) stationed in the ${c.zone} zone. Adapted to high hydrostatic pressure and low light levels.`,
+      xPercent: 50,
+      yPercent: 50,
+      symbol: "squid",
+    };
+    setSelectedDiscovery(mapped);
+  };
+
+  const openMilestonePanel = (m: DepthMilestone) => {
+    const existing = DISCOVERIES.find((d) => d.id === m.id);
+    if (existing) {
+      setSelectedDiscovery(existing);
+    } else {
+      const mapped: Discovery = {
+        id: m.id,
+        name: m.label.split("//")[1]?.trim() || m.label,
+        scientificName: m.subtitle,
+        minimumDepth: m.depth - 150,
+        maximumDepth: m.depth + 150,
+        targetDepth: m.depth,
+        rarity: m.depth > 6000 ? "Legendary" : "Epic",
+        description: `Historic underwater landmark recorded at ${m.depth} meters depth. ${m.subtitle}.`,
+        xPercent: 50,
+        yPercent: 50,
+        symbol: "probe",
+      };
+      setSelectedDiscovery(mapped);
+    }
+  };
+
+  const heroOpacity = Math.max(0, 1 - scrollProgress * 300);
   const isHeroVisible = heroOpacity > 0.01;
+
+  const isTrenchFloorReached = currentDepth > 10750;
+  const trenchFloorOpacity = Math.min(1, (currentDepth - 10750) / 150);
 
   const bg1 = Math.max(0, 1 - scrollProgress * 10);
   const bg2 = scrollProgress <= 0.06 ? 0 : scrollProgress <= 0.22 ? Math.min(1, (scrollProgress - 0.06) * 8) : Math.max(0, 1 - (scrollProgress - 0.22) * 8);
@@ -92,17 +203,31 @@ export default function Landing() {
   const vig = 0.15 + scrollProgress * 0.7;
   const temp = calculateTemperatureFromDepth(currentDepth);
 
-  const getCreatureOpacity = (c: OceanCreature): number => {
-    if (currentDepth < c.depthMin || currentDepth > c.depthMax) return 0;
-    const range = c.depthMax - c.depthMin;
-    const fadeZone = range * 0.15;
-    let opacity = 0.75;
-    if (currentDepth < c.depthMin + fadeZone) {
-      opacity *= (currentDepth - c.depthMin) / fadeZone;
-    } else if (currentDepth > c.depthMax - fadeZone) {
-      opacity *= (c.depthMax - currentDepth) / fadeZone;
+  /**
+   * Eye-Level Viewport Emergence System:
+   * Computes opacity, scale, AND vertical viewport position (viewportTopVh).
+   * Guarantees creatures emerge in the comfortable eye-level middle of the viewport (35vh to 65vh).
+   */
+  const getCreatureAppearance = (c: OceanCreature): { opacity: number; scale: number; viewportTopVh: number } => {
+    if (currentDepth < c.depthMin || currentDepth > c.depthMax) {
+      return { opacity: 0, scale: 0.75, viewportTopVh: 50 };
     }
-    return Math.max(0, Math.min(0.75, opacity));
+    const mid = (c.depthMin + c.depthMax) / 2;
+    const radius = (c.depthMax - c.depthMin) / 2;
+    const dist = currentDepth - mid;
+    const absDist = Math.abs(dist);
+    const normalized = Math.max(0, 1 - absDist / radius);
+    const factor = Math.sin((normalized * Math.PI) / 2);
+    
+    const opacity = Math.min(0.95, factor * 1.1);
+    const scale = 0.85 + factor * 0.2;
+    
+    // Base viewport position incorporates c.vOffsetVh for zero vertical collision
+    const baseVh = 50 + (c.vOffsetVh || 0);
+    const driftRatio = radius > 0 ? dist / radius : 0;
+    const viewportTopVh = baseVh - driftRatio * 10;
+    
+    return { opacity, scale, viewportTopVh };
   };
 
   return (
@@ -111,7 +236,15 @@ export default function Landing() {
       <div className="fixed inset-0 w-full h-full overflow-hidden pointer-events-none select-none z-0">
 
         {/* Film Grain Texture Overlay */}
-        <div className="absolute inset-0 bg-film-grain z-[2] opacity-40" />
+        <div className="absolute inset-0 bg-film-grain z-[2] opacity-35" />
+
+        {/* Direct-DOM Submarine Searchlight Beam */}
+        {!isTouch && (
+          <div
+            ref={spotlightRef}
+            className="absolute inset-0 z-[3] pointer-events-none transition-opacity duration-300"
+          />
+        )}
 
         {/* Zone Gradients */}
         <div style={{ opacity: bg1 }} className="absolute inset-0 bg-gradient-to-b from-[#004d73] via-[#011c2e] to-[#000a12]" />
@@ -120,7 +253,7 @@ export default function Landing() {
         <div style={{ opacity: bg4 }} className="absolute inset-0 bg-gradient-to-b from-[#160903] via-[#060201] to-[#000000]" />
         <div style={{ opacity: bg5 }} className="absolute inset-0 bg-black" />
 
-        {/* Volumetric Light Rays (Surface Layer) */}
+        {/* Volumetric Light Rays */}
         {scrollProgress < 0.25 && (
           <div
             style={{ opacity: Math.max(0, (0.25 - scrollProgress) * 4) }}
@@ -142,75 +275,129 @@ export default function Landing() {
         {/* Sonar Particle Canvas */}
         <SonarCanvas />
 
-        {/* 50 POPULATED CSS-ANIMATED OCEAN CREATURES */}
+        {/* BOTTOM INTERACTIVE INSTRUCTION BADGE */}
+        {scrollProgress > 0.015 && !isTrenchFloorReached && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[40] pointer-events-none select-none transition-all duration-500">
+            <div className="px-6 py-2 bg-black/95 border border-sonar-cyan/60 backdrop-blur-2xl text-center flex items-center gap-2.5 shadow-[0_0_30px_rgba(0,240,255,0.3)] rounded-full">
+              <Sparkles className="w-3.5 h-3.5 text-sonar-cyan animate-pulse" />
+              <span className="text-[10px] font-mono tracking-[0.25em] text-sonar-cyan uppercase font-semibold">
+                Click on any specimen to inspect intel & chat with POSEIDON AI
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* TOP HISTORIC MILESTONE BANNER */}
+        {currentDepth > 150 && !isTrenchFloorReached && HISTORIC_MILESTONES.map((m) => {
+          const depthDiff = Math.abs(currentDepth - m.depth);
+          if (depthDiff > 100) return null;
+          const milestoneOpacity = Math.max(0, 1 - depthDiff / 100);
+
+          return (
+            <div
+              key={m.depth}
+              style={{ opacity: milestoneOpacity }}
+              onClick={() => openMilestonePanel(m)}
+              onMouseEnter={() => setHoveredEntity(m.id)}
+              onMouseLeave={() => setHoveredEntity(null)}
+              className="fixed top-14 left-1/2 -translate-x-1/2 z-[35] flex flex-col items-center pointer-events-auto transition-all duration-300 select-none group"
+            >
+              <div className="px-6 py-2.5 bg-black/90 border border-sonar-cyan/50 hover:border-sonar-cyan backdrop-blur-2xl text-center flex flex-col items-center gap-0.5 shadow-[0_0_35px_rgba(0,240,255,0.3)] group-hover:scale-105 transition-transform">
+                <span className="text-[10px] font-mono tracking-[0.3em] text-sonar-cyan font-bold uppercase flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-sonar-cyan animate-ping" />
+                  {m.label}
+                </span>
+                <span className="text-xs font-sans font-light text-white/90">
+                  {m.subtitle} — <span className="text-sonar-cyan underline">Click to inspect intel</span>
+                </span>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* 50 CREATURES (EYE-LEVEL CENTERED VIEWPORT POSITIONING) */}
         {OCEAN_CREATURES_50.map((c) => {
-          const opacity = getCreatureOpacity(c);
+          const { opacity, scale, viewportTopVh } = getCreatureAppearance(c);
           if (opacity <= 0.01) return null;
 
-          const animClassName =
-            c.animationType === "swim-left"
-              ? "animate-swim-left"
-              : c.animationType === "swim-right"
-              ? "animate-swim-right"
-              : "animate-float-sine";
-
           const hasImageError = failedImages[c.id];
+          const isHovered = hoveredEntity === c.id;
+          const finalScale = isHovered ? scale * 1.08 : scale;
 
           return (
             <div
               key={c.id}
               style={{
-                top: `${c.topPercent}%`,
-                left: c.leftPercent ? `${c.leftPercent}%` : undefined,
+                top: `${viewportTopVh}vh`,
+                left: `${c.leftPercent || 50}%`,
+                transform: `translate(-50%, -50%) scale(${finalScale})`,
                 opacity,
-                transition: "opacity 1.2s ease-in-out",
-                animationDuration: `${c.durationSeconds}s`,
+                willChange: "transform, opacity",
+                transition: "opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), top 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
               }}
-              className={`absolute z-[6] ${animClassName} transform-gpu pointer-events-none flex flex-col items-center`}
+              onClick={() => openCreaturePanel(c)}
+              onMouseEnter={() => setHoveredEntity(c.id)}
+              onMouseLeave={() => setHoveredEntity(null)}
+              className="fixed z-[25] pointer-events-auto flex flex-col items-center group cursor-none"
             >
+              {/* Bioluminescent Glass Capsule Orb */}
               <div
                 style={{
                   width: `${c.widthPx}px`,
                   height: `${c.heightPx}px`,
-                  maskImage: "radial-gradient(ellipse at 50% 50%, black 35%, transparent 78%)",
-                  WebkitMaskImage: "radial-gradient(ellipse at 50% 50%, black 35%, transparent 78%)",
-                  filter: `drop-shadow(0 0 35px ${c.glowColor})`,
+                  boxShadow: isHovered
+                    ? `0 0 45px ${c.glowColor}, inset 0 0 20px rgba(0, 240, 255, 0.6)`
+                    : `0 0 25px ${c.glowColor}, inset 0 0 12px rgba(0, 0, 0, 0.7)`,
                 }}
-                className="relative flex items-center justify-center overflow-hidden"
+                className={`relative rounded-full border p-1.5 backdrop-blur-xl overflow-hidden transition-all duration-300 ${
+                  isHovered
+                    ? "border-sonar-cyan scale-105"
+                    : "border-white/20 hover:border-sonar-cyan/70 bg-black/60"
+                }`}
               >
-                {!hasImageError ? (
-                  <Image
-                    src={`/images/${c.imageFilename}`}
-                    alt={c.name}
-                    fill
-                    sizes={`${c.widthPx}px`}
-                    className="object-cover"
-                    onError={() => setFailedImages((prev) => ({ ...prev, [c.id]: true }))}
-                  />
-                ) : (
-                  /* Glowing Bioluminescent Graphic Silhouette Fallback */
-                  <div className="w-full h-full flex items-center justify-center bg-black/40 border border-sonar-cyan/30 rounded-full p-4">
-                    <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="2" className="w-3/4 h-3/4 text-sonar-cyan animate-pulse">
-                      <path d="M20,50 Q40,20 80,50 Q40,80 20,50 Z" />
-                      <circle cx="65" cy="45" r="4" fill="currentColor" />
-                    </svg>
-                  </div>
+                <div
+                  style={{
+                    maskImage: "radial-gradient(circle at 50% 50%, black 50%, transparent 95%)",
+                    WebkitMaskImage: "radial-gradient(circle at 50% 50%, black 50%, transparent 95%)",
+                  }}
+                  className="w-full h-full rounded-full overflow-hidden flex items-center justify-center bg-black/70"
+                >
+                  {!hasImageError ? (
+                    <img
+                      src={`/images/${c.imageFilename}`}
+                      alt={c.name}
+                      className="w-full h-full object-cover rounded-full transform group-hover:scale-110 transition-transform duration-500"
+                      onError={() => setFailedImages((prev) => ({ ...prev, [c.id]: true }))}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-black/40 border border-sonar-cyan/40 rounded-full p-4">
+                      <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="2" className="w-3/4 h-3/4 text-sonar-cyan animate-pulse">
+                        <path d="M20,50 Q40,20 80,50 Q40,80 20,50 Z" />
+                        <circle cx="65" cy="45" r="4" fill="currentColor" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+
+                {/* Pulse Ring Effect on Hover */}
+                {isHovered && (
+                  <span className="absolute inset-0 rounded-full border border-sonar-cyan animate-ping opacity-60 pointer-events-none" />
                 )}
               </div>
 
-              {opacity > 0.3 && (
-                <div
-                  className="mt-1 flex flex-col items-center text-center font-mono"
-                  style={{ opacity: Math.min(1, (opacity - 0.3) * 3) }}
-                >
-                  <span className="text-[7.5px] tracking-[0.25em] text-white/40 uppercase">
-                    {c.scientificName}
-                  </span>
-                  <span className="text-[11px] font-display font-medium tracking-wide text-white/70">
-                    {c.name}
-                  </span>
-                </div>
-              )}
+              {/* Specimen Tag */}
+              <div
+                className={`mt-2.5 px-4 py-1.5 bg-black/90 border backdrop-blur-2xl text-center transition-all duration-200 shadow-xl ${
+                  isHovered ? "border-sonar-cyan scale-105 shadow-[0_0_25px_rgba(0,240,255,0.7)]" : "border-white/20 opacity-85"
+                }`}
+              >
+                <span className="text-[8px] font-mono tracking-[0.25em] text-sonar-cyan/90 uppercase block">
+                  {c.scientificName}
+                </span>
+                <span className="text-[12px] font-display font-semibold tracking-wide text-white block mt-0.5">
+                  {c.name}
+                </span>
+              </div>
             </div>
           );
         })}
@@ -224,8 +411,8 @@ export default function Landing() {
         {/* HERO SCREEN */}
         {isHeroVisible && (
           <div
-            style={{ opacity: heroOpacity, transform: `translateY(${-scrollProgress * 3000}px)` }}
-            className="absolute inset-0 flex flex-col justify-between items-center h-full w-full z-20 pointer-events-auto"
+            style={{ opacity: heroOpacity, transform: `translateY(${-scrollProgress * 6000}px)` }}
+            className="absolute inset-0 flex flex-col justify-between items-center h-full w-full z-20 pointer-events-auto transition-opacity duration-200"
           >
             <header className="w-full max-w-7xl mx-auto px-8 py-8 flex items-center justify-between pointer-events-auto">
               <div className="flex items-center gap-3">
@@ -238,7 +425,7 @@ export default function Landing() {
               <button
                 type="button"
                 onClick={toggleAudio}
-                className="flex items-center gap-2 px-3 py-1.5 border border-white/15 hover:border-sonar-cyan/50 bg-black/40 backdrop-blur-md font-mono text-[9px] text-white/70 hover:text-sonar-cyan transition-all duration-300 cursor-none"
+                className="flex items-center gap-2 px-3 py-1.5 border border-white/15 hover:border-sonar-cyan/50 bg-black/40 backdrop-blur-md font-mono text-[9px] text-white/70 hover:text-sonar-cyan transition-all duration-300"
               >
                 {isAudioPlaying ? (
                   <>
@@ -282,7 +469,7 @@ export default function Landing() {
                   onMouseEnter={() => setIsHoveringCTA(true)}
                   onMouseLeave={() => setIsHoveringCTA(false)}
                   aria-label="Start Expedition"
-                  className="group relative px-10 py-4 border border-white/20 hover:border-sonar-cyan/60 text-white/80 hover:text-sonar-cyan font-display tracking-[0.3em] text-[11px] font-medium overflow-hidden transition-all duration-500 hover:shadow-[0_0_40px_rgba(0,240,255,0.15)] focus:outline-none cursor-none bg-white/[0.03] hover:bg-white/[0.06] backdrop-blur-sm"
+                  className="group relative px-10 py-4 border border-white/20 hover:border-sonar-cyan/60 text-white/80 hover:text-sonar-cyan font-display tracking-[0.3em] text-[11px] font-medium overflow-hidden transition-all duration-500 hover:shadow-[0_0_40px_rgba(0,240,255,0.15)] focus:outline-none bg-white/[0.03] hover:bg-white/[0.06] backdrop-blur-sm"
                 >
                   <span className="relative z-10">BEGIN DESCENT</span>
                   <span className="absolute bottom-0 left-0 h-[1px] w-0 group-hover:w-full bg-sonar-cyan/60 transition-all duration-700" />
@@ -309,46 +496,94 @@ export default function Landing() {
             </footer>
           </div>
         )}
-      </div>
 
-      {/* DISCOVERY NODES */}
-      <AnimatePresence>
-        {DISCOVERIES.map((d) => {
-          const inRange = currentDepth >= d.minimumDepth && currentDepth <= d.maximumDepth;
-          return inRange && (
-            <DiscoveryNode
-              key={d.id}
-              discovery={d}
-              onHoverStart={() => setHoveredDiscovery(d)}
-              onHoverEnd={() => setHoveredDiscovery(null)}
-              onClick={() => setSelectedDiscovery(d)}
-            />
-          );
-        })}
-      </AnimatePresence>
+        {/* CHALLENGER DEEP TRENCH FLOOR ENDING SCREEN */}
+        {isTrenchFloorReached && (
+          <div
+            style={{ opacity: trenchFloorOpacity }}
+            className="absolute inset-0 flex flex-col justify-center items-center h-full w-full z-30 pointer-events-auto transition-opacity duration-500 bg-black/80 backdrop-blur-md px-6 text-center"
+          >
+            <div className="max-w-2xl flex flex-col items-center gap-6">
+              <div className="flex items-center gap-2 px-3 py-1 border border-sonar-cyan/40 bg-sonar-cyan/10 font-mono text-[10px] text-sonar-cyan uppercase tracking-[0.3em]">
+                <Sparkles className="w-3.5 h-3.5 text-sonar-cyan animate-pulse" />
+                <span>EXPEDITION COMPLETE // BOTTOM OF EARTH REACHED</span>
+              </div>
+
+              <h2 className="font-display font-light text-3xl md:text-5xl text-white tracking-tight leading-tight">
+                Thank you for exploring the <br />
+                <span className="font-medium text-transparent bg-clip-text bg-gradient-to-r from-sonar-cyan via-white to-sonar-cyan">
+                  deepest abyss on Earth
+                </span>
+              </h2>
+
+              <p className="font-sans text-sm md:text-base font-light text-white/70 max-w-lg leading-relaxed">
+                You have reached Challenger Deep (10,928m beneath the surface), where water pressure exceeds 1,100 atmospheres.
+              </p>
+
+              {/* Stats Summary Grid */}
+              <div className="grid grid-cols-3 gap-4 w-full max-w-md border border-white/10 bg-black/60 p-4 font-mono text-center my-2">
+                <div className="flex flex-col">
+                  <span className="text-[8px] text-white/40 uppercase tracking-widest">FINAL DEPTH</span>
+                  <span className="text-base font-bold text-white mt-1">10,928m</span>
+                </div>
+                <div className="flex flex-col border-l border-r border-white/10 px-2">
+                  <span className="text-[8px] text-white/40 uppercase tracking-widest">PRESSURE</span>
+                  <span className="text-base font-bold text-sonar-cyan mt-1">1,101 ATM</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[8px] text-white/40 uppercase tracking-widest">SPECIES</span>
+                  <span className="text-base font-bold text-white/90 mt-1">50 RECORDED</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-4 mt-2">
+                <button
+                  type="button"
+                  onClick={scrollToTop}
+                  className="px-8 py-3.5 border border-sonar-cyan bg-sonar-cyan/15 hover:bg-sonar-cyan/30 text-sonar-cyan font-mono text-xs font-semibold flex items-center gap-2 transition-all duration-300 shadow-[0_0_25px_rgba(0,240,255,0.4)]"
+                >
+                  <ArrowUp className="w-4 h-4" />
+                  <span>ASCEND TO SURFACE</span>
+                </button>
+              </div>
+
+              <footer className="mt-8 font-mono text-[9px] text-white/30 tracking-widest uppercase">
+                ABYSS AI // POSEIDON EXPEDITION SYSTEMS v2.0
+              </footer>
+            </div>
+          </div>
+        )}
+      </div>
 
       <DepthHUD />
       <ZoneTransitionOverlay />
 
       <AnimatePresence>
+        {isLaunchingDive && (
+          <DiveLaunchOverlay onComplete={handleDiveComplete} />
+        )}
         {selectedDiscovery && (
           <DiscoveryPanel discovery={selectedDiscovery} onClose={() => setSelectedDiscovery(null)} />
         )}
       </AnimatePresence>
 
-      {/* MINIMAL CURSOR */}
-      {!isTouch && hasMovedMouse && (
+      {/* ZERO-LAG NATIVE DIRECT DOM CURSOR SPOTLIGHT */}
+      {!isTouch && (
         <div
-          style={{ left: mousePos.x, top: mousePos.y, transform: "translate(-50%,-50%)" }}
-          className="fixed pointer-events-none z-50 flex items-center justify-center"
+          ref={cursorRef}
+          style={{ transform: "translate3d(-100px, -100px, 0)", opacity: 0 }}
+          className="fixed top-0 left-0 pointer-events-none z-50 flex items-center justify-center -ml-2 -mt-2 transition-opacity duration-200"
         >
-          <div className={`rounded-full transition-all duration-300 ${
-            hoveredDiscovery
-              ? "w-3.5 h-3.5 bg-sonar-cyan/90 shadow-[0_0_15px_rgba(0,240,255,0.8)]"
-              : isHoveringCTA
-              ? "w-3 h-3 bg-white/80 shadow-[0_0_12px_rgba(255,255,255,0.6)]"
-              : "w-1.5 h-1.5 bg-white/60 shadow-[0_0_6px_rgba(255,255,255,0.3)]"
-          }`} />
+          <div
+            ref={cursorDotRef}
+            className={`rounded-full transition-all duration-150 ease-out ${
+              hoveredEntity
+                ? "w-5 h-5 bg-sonar-cyan shadow-[0_0_25px_rgba(0,240,255,1)]"
+                : isHoveringCTA
+                ? "w-4 h-4 bg-white shadow-[0_0_18px_rgba(255,255,255,0.9)]"
+                : "w-2.5 h-2.5 bg-sonar-cyan/90 shadow-[0_0_12px_rgba(0,240,255,0.85)]"
+            }`}
+          />
         </div>
       )}
     </div>

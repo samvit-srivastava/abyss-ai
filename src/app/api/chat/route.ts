@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { oceanObjects } from '@/data/ocean';
-import { buildOceanContext } from '@/lib/contextBuilder';
+import { DISCOVERIES } from '@/data/discoveries';
+import { OCEAN_CREATURES_50 } from '@/data/oceanCreatures';
 import { buildOceanPrompt } from '@/lib/promptBuilder';
 import { generateGeminiResponse } from '@/lib/gemini';
-import { ChatResponse, ChatRequest } from '@/types/ocean';
+import { ChatResponse, ChatRequest, OceanObject } from '@/types/ocean';
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Parse JSON body safely
-    const body = await req.json().catch(() => null) as ChatRequest | null;
+    const body = (await req.json().catch(() => null)) as ChatRequest | null;
     
     if (!body) {
       return NextResponse.json<ChatResponse>(
@@ -19,7 +19,6 @@ export async function POST(req: NextRequest) {
 
     const { objectId, question } = body;
 
-    // 2. Validate payload presence
     if (!objectId) {
       return NextResponse.json<ChatResponse>(
         { success: false, error: 'Missing required field: objectId' },
@@ -34,25 +33,83 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. Find target object in ocean dataset
-    const oceanObject = oceanObjects.find((obj) => obj.id === objectId);
+    // 1. Search in oceanObjects dataset
+    let oceanObject: OceanObject | undefined = oceanObjects.find(
+      (obj) => obj.id === objectId || obj.name.toLowerCase().includes(objectId.toLowerCase())
+    );
+
+    // 2. Fallback search in DISCOVERIES dataset
     if (!oceanObject) {
-      return NextResponse.json<ChatResponse>(
-        { success: false, error: `Invalid objectId: '${objectId}' not found in the ocean dataset.` },
-        { status: 404 }
+      const discoveryMatch = DISCOVERIES.find(
+        (d) => d.id === objectId || d.name.toLowerCase().includes(objectId.toLowerCase())
       );
+      if (discoveryMatch) {
+        oceanObject = {
+          id: discoveryMatch.id,
+          name: discoveryMatch.name,
+          zone: discoveryMatch.targetDepth > 6000 ? 'Hadal Zone' : discoveryMatch.targetDepth > 1000 ? 'Midnight Zone' : 'Sunlight Zone',
+          depth: discoveryMatch.targetDepth,
+          description: discoveryMatch.description,
+          interestingFacts: [
+            `Scientific / Classification tag: ${discoveryMatch.scientificName}.`,
+            `Recorded target depth: ${discoveryMatch.targetDepth} meters beneath surface.`,
+            `Rarity tier: ${discoveryMatch.rarity}.`
+          ],
+          sampleQuestions: [
+            `How does ${discoveryMatch.name} adapt to deep ocean pressure?`,
+            `What is the history or biological role of ${discoveryMatch.name}?`,
+            `What happens at a depth of ${discoveryMatch.targetDepth} meters?`
+          ],
+          imagePlaceholder: discoveryMatch.name
+        };
+      }
     }
 
-    // 4. Generate structured context information
-    const context = buildOceanContext(oceanObject);
+    // 3. Fallback search in OCEAN_CREATURES_50 dataset
+    if (!oceanObject) {
+      const creatureMatch = OCEAN_CREATURES_50.find(
+        (c) => c.id === objectId || c.name.toLowerCase().includes(objectId.toLowerCase())
+      );
+      if (creatureMatch) {
+        oceanObject = {
+          id: creatureMatch.id,
+          name: creatureMatch.name,
+          zone: `${creatureMatch.zone} Zone`,
+          depth: Math.round((creatureMatch.depthMin + creatureMatch.depthMax) / 2),
+          description: `${creatureMatch.name} (${creatureMatch.scientificName}) is a marine organism inhabiting the ${creatureMatch.zone} zone between ${creatureMatch.depthMin}m and ${creatureMatch.depthMax}m.`,
+          interestingFacts: [
+            `Scientific name: ${creatureMatch.scientificName}.`,
+            `Depth range: ${creatureMatch.depthMin}m to ${creatureMatch.depthMax}m.`,
+            `Adapted to low light, freezing temperatures, and hydrostatic pressure.`
+          ],
+          sampleQuestions: [
+            `How does ${creatureMatch.name} navigate in dark waters?`,
+            `What does ${creatureMatch.name} feed on?`,
+            `How does its body structure handle pressure?`
+          ],
+          imagePlaceholder: creatureMatch.name
+        };
+      }
+    }
 
-    // 5. Generate immersive prompt
-    const prompt = buildOceanPrompt(context, question.trim());
+    // 4. Default generic fallback if objectId is arbitrary
+    if (!oceanObject) {
+      oceanObject = {
+        id: objectId,
+        name: objectId.replace(/[-_]/g, ' '),
+        zone: 'Deep Ocean',
+        depth: 1000,
+        description: `A deep sea target identified as ${objectId}.`,
+        interestingFacts: [`Located in the ocean depth column.`],
+        sampleQuestions: [`Tell me about ${objectId}.`],
+        imagePlaceholder: objectId
+      };
+    }
 
-    // 6. Call Gemini LLM wrapper
+    // Build prompt & request response from Gemini API
+    const prompt = buildOceanPrompt(oceanObject, question.trim());
     const answer = await generateGeminiResponse(prompt);
 
-    // 7. Return successful response containing generated answer and the source object
     return NextResponse.json<ChatResponse>({
       success: true,
       answer,
@@ -64,7 +121,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json<ChatResponse>(
       {
         success: false,
-        error: error.message || 'An unexpected internal error occurred.',
+        error: error.message || 'An unexpected internal error occurred in Gemini API.',
       },
       { status: 500 }
     );

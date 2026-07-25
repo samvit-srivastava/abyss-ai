@@ -31,8 +31,11 @@
   background: rgba(0, 240, 255, 0.6);
 }
 
-/* Custom Cursor Utility */
-body.hide-cursor, body.hide-cursor * {
+/* Complete Browser Cursor Hiding Rule */
+html.hide-cursor,
+html.hide-cursor *,
+body.hide-cursor,
+body.hide-cursor * {
   cursor: none !important;
 }
 
