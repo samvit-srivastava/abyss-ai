@@ -99,7 +99,7 @@ export default function Landing() {
   // Animate minor scale readings on depth telemetry display
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentDepth((prev) => {
+      setCurrentDepth(() => {
         // Subtle drift oscillation representing floating position (0m to 8m)
         const drift = Math.sin(Date.now() / 1500) * 2;
         const target = 4 + Math.round(drift);
@@ -257,7 +257,7 @@ export default function Landing() {
           animate="visible"
           className="mt-6 font-sans text-base md:text-lg font-light text-slate-300 leading-relaxed max-w-2xl text-balance"
         >
-          Descend through the ocean's layers, uncover forgotten mysteries, and let{" "}
+          Descend through the ocean&apos;s layers, uncover forgotten mysteries, and let{" "}
           <span className="text-sonar-cyan font-normal drop-shadow-[0_0_12px_rgba(0,240,255,0.4)]">
             POSEIDON
           </span>{" "}
